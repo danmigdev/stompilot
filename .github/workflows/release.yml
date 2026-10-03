@@ -1,0 +1,205 @@
+name: Release Windows app
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Test and build Windows executable
+    if: github.event.deleted == false
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Validate version tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$') {
+            throw 'Use a version tag such as v0.3.1 or v0.4.0-beta.1.'
+          }
+
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m venv .venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt -r requirements-docs.txt
+
+      - name: Install frontend dependencies
+        run: npm.cmd --prefix frontend ci
+
+      - name: Check and build Svelte
+        run: npm.cmd --prefix frontend run build
+
+      - name: Install Python test browser
+        run: .\.venv\Scripts\python.exe -m playwright install chromium
+
+      - name: Install frontend test browser
+        working-directory: frontend
+        run: npx.cmd playwright install chromium
+
+      - name: Run Python and UI service integration tests
+        run: |
+          @'
+          import unittest
+          suite = unittest.defaultTestLoader.discover('midi_configurator', top_level_dir='.')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if result.skipped:
+              print('Release checks require every test to run; skipped:', result.skipped)
+          raise SystemExit(0 if result.wasSuccessful() and result.testsRun and not result.skipped else 1)
+          '@ | .\.venv\Scripts\python.exe -
+
+      - name: Run frontend interaction tests
+        run: npm.cmd --prefix frontend test
+
+      - name: Build portable executable
+        run: .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean Stompilot.spec
+
+      - name: Ensure WebView2 Runtime for desktop verification
+        timeout-minutes: 5
+        run: |
+          $runtimeKeys = @(
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}',
+            'HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          )
+          function Get-WebViewRuntimeVersion {
+            foreach ($key in $runtimeKeys) {
+              $version = Get-ItemPropertyValue -LiteralPath $key -Name pv -ErrorAction SilentlyContinue
+              if ($version -and [version]$version -gt [version]'0.0.0.0') { return $version }
+            }
+          }
+          if (-not (Get-WebViewRuntimeVersion)) {
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+              throw 'The WebView2 installer does not have a valid Microsoft signature.'
+            }
+            $installProcess = Start-Process -FilePath $installer -ArgumentList '/silent', '/install' -PassThru -WindowStyle Hidden
+            if (-not $installProcess.WaitForExit(180000)) { throw 'WebView2 installation timed out.' }
+            if ($installProcess.ExitCode -ne 0) { throw "WebView2 installation failed: $($installProcess.ExitCode)" }
+          }
+          $installedVersion = Get-WebViewRuntimeVersion
+          if (-not $installedVersion) { throw 'WebView2 Runtime is unavailable.' }
+          Write-Output "WebView2 Runtime $installedVersion"
+
+      - name: Verify packaged desktop app without MIDI access
+        timeout-minutes: 3
+        run: |
+          $executable = (Resolve-Path -LiteralPath 'dist\Stompilot.exe').Path
+          $report = Join-Path $env:GITHUB_WORKSPACE 'build\release-smoke.json'
+          $appProcess = Start-Process -FilePath $executable -ArgumentList @('--smoke-test', '--report', ('"' + $report + '"')) -PassThru -WindowStyle Hidden
+          if (-not $appProcess.WaitForExit(90000)) {
+            Stop-Process -Id $appProcess.Id -Force
+            throw 'The packaged desktop smoke test timed out.'
+          }
+          if ($appProcess.ExitCode -ne 0) { throw "Desktop smoke test failed: $($appProcess.ExitCode)" }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if ($result.ok -ne $true) { throw 'The desktop smoke report did not confirm success.' }
+          Get-Content -LiteralPath $report
+
+      - name: Prepare example and SHA-256 checksums
+        run: |
+          Copy-Item -LiteralPath 'examples\tank_mini_live_boost.json' -Destination 'dist\tank_mini_live_boost.json'
+          $lines = foreach ($name in @('Stompilot.exe', 'tank_mini_live_boost.json')) {
+            $digest = (Get-FileHash -LiteralPath (Join-Path 'dist' $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$digest  $name"
+          }
+          [System.IO.File]::WriteAllText((Join-Path $PWD 'dist\SHA256SUMS.txt'), ($lines -join "`n") + "`n", [System.Text.Encoding]::ASCII)
+
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-release
+          path: |
+            dist/Stompilot.exe
+            dist/tank_mini_live_boost.json
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-diagnostics
+          path: |
+            build/release-smoke.json
+            build/Stompilot/warn-Stompilot.txt
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified Windows assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-release
+          path: dist
+
+      - name: Verify asset checksums
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS.txt
+
+      - name: Create release with compiled assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          Download **Stompilot.exe** and run it from a writable folder. Microsoft Edge WebView2 Runtime is required; Python and Node.js are not required to run the app.
+
+          **tank_mini_live_boost.json** provides the Tremolo and solo-boost example. **SHA256SUMS.txt** contains the executable and example checksums.
+
+          This release was built from the version tag on GitHub Actions after Python, browser interaction, and packaged desktop smoke tests passed. Tests use simulated controllers; physical USB writing and experimental preset reload retain the verification limits described in the README.
+          NOTES
+          printf '\n[Usage and screenshots](%s/%s/blob/%s/README.md) · [Build and tests](%s/%s/actions/runs/%s)\n' \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> release-notes.md
+          flags=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            flags+=(--prerelease --latest=false)
+          fi
+          gh release create "$RELEASE_TAG" \
+            dist/Stompilot.exe dist/tank_mini_live_boost.json dist/SHA256SUMS.txt \
+            --verify-tag --title "Stompilot $RELEASE_TAG" \
+            --generate-notes --notes-file release-notes.md "${flags[@]}"

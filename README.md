@@ -7,7 +7,7 @@ Svelte interface runs in a Windows desktop window backed by a Python MIDI servic
 
 ## Download and start
 
-Download [Stompilot.exe from release v0.3.0](https://github.com/danmigdev/stompilot/releases/tag/v0.3.0)
+Download [Stompilot.exe from the latest release](https://github.com/danmigdev/stompilot/releases/latest)
 and open it from a writable folder. The portable Windows app includes its Python
 runtime, compiled Svelte interface, and USB MIDI dependencies: no Python or Node.js
 installation is needed. **Microsoft Edge WebView2 Runtime** is required to display
@@ -241,3 +241,24 @@ include them.
 
 See [screenshot reproduction](docs/usage.md#documentation-screenshots) for the
 isolated browser fixture used by this README.
+
+## Automatic releases
+
+Pushing a version tag runs the [Windows release workflow](.github/workflows/release.yml).
+It installs dependencies, builds Svelte, runs the Python and browser tests,
+packages the EXE, and checks the packaged desktop app before publishing.
+The release contains `Stompilot.exe`, `tank_mini_live_boost.json`, and
+`SHA256SUMS.txt`, with generated release notes and a link to its build results.
+
+After committing and pushing the changes to release:
+
+```powershell
+git tag -a v0.3.2 -m "Stompilot v0.3.2"
+git push origin v0.3.2
+```
+
+Use a new `vMAJOR.MINOR.PATCH` tag for each release. A suffix such as
+`v0.4.0-beta.1` publishes a prerelease. Creating a tag locally does not trigger
+the workflow until it is pushed. Failed checks prevent publication; inspect
+the run under the repository's **Actions** tab. The workflow uses GitHub's
+automatic token, so no additional repository secrets are required.
