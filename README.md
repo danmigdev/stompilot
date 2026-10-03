@@ -2,14 +2,19 @@
 
 A visual MIDI configurator for Chocolate Plus, with a built-in TANK Mini profile
 and support for future device profiles. Create switch assignments, edit a local
-copy of the controller configuration, and apply it over USB when ready.
+copy of the controller configuration, and apply it over USB when ready. Its
+Svelte interface runs in a Windows desktop window backed by a Python MIDI service.
 
 ## Download and start
 
-Download [Stompilot.exe from release v0.2.0](https://github.com/danmigdev/stompilot/releases/tag/v0.2.0)
+Download [Stompilot.exe from release v0.3.0](https://github.com/danmigdev/stompilot/releases/tag/v0.3.0)
 and open it from a writable folder. The portable Windows app includes its Python
-runtime and USB MIDI dependencies: no Python installation or setup script is
-needed. In a source checkout, **Launch Stompilot.cmd** prefers the built executable.
+runtime, compiled Svelte interface, and USB MIDI dependencies: no Python or Node.js
+installation is needed. **Microsoft Edge WebView2 Runtime** is required to display
+the interface; if it is missing, install the Evergreen Runtime from
+[Microsoft's WebView2 download page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+In a source checkout, **Launch Stompilot.cmd** prefers the built
+executable.
 
 The built-in TANK profile travels with the executable. Imported profiles are
 stored in `profiles/` beside it, and controller backups in `.backups/`. Copy those
@@ -25,24 +30,25 @@ or write a configuration automatically.
 ![Startup choices for a saved project, controller read, or empty project](docs/screenshots/startup.png)
 
 **Open saved project** loads a Stompilot JSON file. **Read Chocolate Plus** opens
-a read-only controller window: select the USB device, choose **Connect and read**,
-inspect its assignments, then choose **Load into editor** for an editable local
-copy. The editor's **Read controller** button opens the same workflow.
+the controller page and scans available MIDI devices. Select the USB device,
+choose **Read controller**, inspect **Current configuration**, then choose
+**Import as project** for an editable local copy. **Chocolate Plus** in the
+sidebar opens the same workflow; **Scan devices** refreshes the device list.
 
-![Read-only Chocolate Plus connection and import window](docs/screenshots/controller-read.png)
+![Chocolate Plus page with a read configuration ready for import](docs/screenshots/controller-read.png)
 
 The source banner shows the filename or controller read time, together with the
-local modification state. **Save project** saves that local copy to a file.
-**Write to controller** opens the programming preview; its final **Write project
-to controller** button applies the displayed project. Reading and loading into
-the editor never write to the controller.
+local modification state. **Save** or **Save project** saves that local copy to
+a file; **Save as…** creates a separate file. Writing requires a controller read,
+**Preview changes**, **Write to controller**, and explicit confirmation of that
+preview. Reading and importing never write to the controller.
 
 The Chocolate stores MIDI assignments, not the TANK's current preset values.
 Stompilot preserves imported MIDI bytes without guessing a device, effect, or
 model. Firmware 16 Advanced Custom configurations with single or alternating
 switches and CC or complete SysEx messages can be imported. Unsupported active
 modes, gestures, or command types remain available for read-only inspection and
-cannot be loaded into the editor.
+cannot be imported as an editable project.
 
 ## Use case: Tremolo and a solo boost
 
@@ -95,10 +101,10 @@ information and the guidance beneath the preview.
 
 ## Adjust the interface size
 
-Use the global **Zoom** controls: **-**, **+**, the percentage, and **Reset**.
-Zoom ranges from 75% to 200% in 25-point steps.
-They resize application text throughout the welcome screen, editor, action
-dialogs, controller windows, and application confirmations and errors.
+Use **-** and **+** in the top-right **Aa** controls; click the percentage to
+reset to 100%. Zoom ranges from 75% to 200% in 25-point steps.
+It resizes application text and controls throughout the welcome screen, editor,
+action dialogs, controller page, and application confirmations and errors.
 Use the scrollbars to reach content in smaller windows at higher zoom.
 
 | Shortcut | Action |
@@ -132,16 +138,18 @@ TANK effect.
 
 ## Review and write over USB
 
-1. Connect the Chocolate Plus by USB and close MidiSuite.
-2. In the editor, choose **Write to controller**, select the USB device, and
-   choose **Connect and read**.
-3. Review the **Project to write** preview and the **Current controller
-   configuration** tab.
-4. Choose **Write project to controller** to apply the reviewed local project.
+1. Open or create the local project to apply. Connect the Chocolate Plus by USB
+   and close MidiSuite.
+2. Open **Chocolate Plus** in the sidebar, choose **Scan devices**, select the
+   device, and choose **Read controller**.
+3. Choose **Preview changes** and compare **Write preview** with **Current
+   configuration**.
+4. Choose **Write to controller**, review the confirmation, then choose **Write
+   exact preview** to apply that local project.
 
 ![Controller programming preview for the local project](docs/screenshots/controller-write-preview.png)
 
-![Current controller configuration tab](docs/screenshots/controller-current.png)
+![Current controller configuration and Import as project button](docs/screenshots/controller-current.png)
 
 Before writing, Stompilot reads the current configuration again and saves an
 exact backup beside the app. It writes changed bytes and reads the result back
@@ -149,8 +157,10 @@ to verify it. A failed backup, changed controller configuration, failed
 acknowledgement, or readback mismatch stops the operation or reports an error.
 See [write scope and backup details](docs/usage.md#controller-write-scope).
 
-Controller screenshots use simulated configuration data for documentation;
-they do not demonstrate a physical write.
+These screenshots show the actual compiled Svelte interface using an isolated,
+read-only documentation bridge with simulated controller data. The visible
+browser-preview banner identifies that fixture; the desktop app uses its Python
+USB bridge. Screenshots do not demonstrate a physical write.
 
 ## Device profiles and future devices
 
@@ -159,7 +169,7 @@ or exports JSON definitions. It is not a visual profile-definition editor.
 Export a profile, edit the definition in a text editor, then import it with a
 new ID and name. TANK Mini stock V09 is the only bundled device profile.
 
-![Device profiles window with TANK Mini information and JSON import/export](docs/screenshots/device-profiles.png)
+![Device profiles page with TANK Mini information and JSON import/export](docs/screenshots/device-profiles.png)
 
 For another device using CC, adapt the [generic CC profile template](examples/generic_cc_profile.json).
 Other protocols can use a registered Python encoder. JSON profiles are data and
@@ -167,8 +177,9 @@ do not execute code. See [profile and encoder details](docs/usage.md#device-prof
 
 ## Manual MidiSuite workflow
 
-Use **Copy for MidiSuite** for the selected state, or **Export messages** for a
-text summary of all assignments. In MidiSuite, choose the switch, mode, and Bank
+Use the **Copy MIDI bytes** icon beside **Hex bytes** for the selected state, or
+**Export MIDI** for a text summary of all assignments. **CC rows** displays
+channel, controller number, and value. In MidiSuite, choose the switch, mode, and Bank
 A/B. Paste all SysEx lines into the same **SysEx (hex)** field, or add one CC row
 per command, then save the controller configuration there. The exported text is
 a human-readable summary, not a native MidiSuite import file.
@@ -195,16 +206,19 @@ More technical context is in [development and usage notes](docs/usage.md) and th
 
 ## Run or build from source
 
-Source development requires Python 3.12 or later with Tkinter. **Setup
-Stompilot.cmd** creates `.venv` and installs the USB MIDI dependencies. **Build
-Stompilot.cmd** installs `requirements-build.txt` and builds `dist/Stompilot.exe`
-using PyInstaller and `Stompilot.spec`. Python is needed to build, not to run the
-released executable.
+Source development requires Python 3.12 or later, Node.js 20.19 or later, and
+Microsoft Edge WebView2 Runtime. **Setup Stompilot.cmd** creates `.venv`, installs
+the Python dependencies, and builds the Svelte frontend. **Build Stompilot.cmd**
+also installs `requirements-build.txt`, checks and builds the frontend, then
+builds `dist/Stompilot.exe` with PyInstaller and `Stompilot.spec`. The packaged
+desktop host uses pywebview and WebView2; Node.js is only used while building.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
-.\.venv\Scripts\python.exe midi_configurator/app.py
+npm.cmd --prefix frontend ci
+npm.cmd --prefix frontend run build
+.\.venv\Scripts\python.exe midi_configurator/desktop.py
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean Stompilot.spec
 ```
 
@@ -212,6 +226,18 @@ Offline checks do not write to connected hardware:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s midi_configurator -t . -v
-.\.venv\Scripts\python.exe midi_configurator/app.py --check
-.\.venv\Scripts\python.exe midi_configurator/app.py --smoke-test
+.\.venv\Scripts\python.exe midi_configurator/desktop.py --check
+.\.venv\Scripts\python.exe midi_configurator/desktop.py --smoke-test
+npm.cmd --prefix frontend run check
+npx.cmd --prefix frontend playwright install chromium
+npm.cmd --prefix frontend test
 ```
+
+The Python suite also includes compiled Svelte/Python service integration tests.
+They skip when the frontend build or optional Playwright/Chromium dependencies
+are missing. Install `requirements-docs.txt` and the Python Playwright Chromium
+browser as described in the [development notes](docs/usage.md#offline-checks) to
+include them.
+
+See [screenshot reproduction](docs/usage.md#documentation-screenshots) for the
+isolated browser fixture used by this README.

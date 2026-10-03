@@ -22,7 +22,5 @@ def data_directory() -> Path:
 
 
 def profile_directory() -> Path:
-    """Locate custom profiles; frozen defaults remain in resource_dir()."""
-    if frozen():
-        return data_directory() / "profiles"
-    return resource_dir() / "profiles"
+    """Locate durable custom profiles separately from immutable bundled defaults."""
+    return data_directory() / "profiles"

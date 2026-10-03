@@ -1,7 +1,22 @@
 # Development and usage notes
 
 The [README](../README.md) covers the application workflows and screenshots.
-These notes describe controller write scope, device profiles, and source layout.
+These notes describe the desktop architecture, controller write scope, device
+profiles, source layout, and documentation captures.
+
+## Desktop interface and service
+
+The Svelte frontend is compiled into `frontend/build/` and packaged with the
+Windows executable. `midi_configurator/desktop.py` hosts it in pywebview using
+Microsoft Edge WebView2. The Python `DesktopService` owns project files,
+profile validation, MIDI compilation, controller reads, backups, and writes.
+UI requests cross the desktop bridge; rendering the interface does not itself
+discover or modify a MIDI device.
+
+Startup requires an explicit saved project, controller read, or empty project.
+The source banner distinguishes a saved filename from a controller read and
+tracks local changes. Saving a project creates or updates a JSON file; applying
+it to hardware requires a separate read, preview, and confirmed write.
 
 ## Interface preferences
 
@@ -12,9 +27,10 @@ Large content remains available through scrolling.
 Windows file pickers retain their system appearance.
 
 Zoom is stored in `settings.json`, separately from projects. It does not alter
-a project's MIDI assignments or its local modification state. The documentation
-capture helper disables preference persistence so screenshots do
-not change the user's saved zoom setting.
+a project's MIDI assignments or its local modification state. The percentage
+button resets zoom to 100%. Documentation captures use an isolated temporary
+data directory, including their preferences, so they cannot change the user's
+saved zoom setting.
 
 ## Controller write scope
 
@@ -38,7 +54,8 @@ read and review. It also checks for changes between the backup and the write.
 Only changed bytes are written, followed by a complete readback verification.
 Failed acknowledgements or a different readback are reported as errors.
 
-Reading and **Load into editor** never write. Importing does not retrieve a
+Reading and **Import as project** never write. Reading also leaves the write
+preview empty until **Preview changes** is chosen. Importing does not retrieve a
 connected TANK's active effect settings: it copies Chocolate MIDI assignments.
 Unsupported active modes, gestures, or command types prevent editable import
 rather than being silently converted or dropped.
@@ -102,22 +119,27 @@ packet and static V09 normal-mode path.
 
 ## Source layout
 
-- `midi_configurator/app.py`: interface, startup choices, and action editors.
+- `frontend/src/App.svelte`: startup, project editor, profiles, controller page,
+  zoom, and confirmations.
+- `frontend/src/ActionEditor.svelte`: semantic and imported raw MIDI editors.
+- `frontend/src/bridge.ts`: typed desktop/test bridge requests.
+- `frontend/tests/`: isolated browser interaction tests.
+- `midi_configurator/desktop.py`: pywebview/WebView2 window and desktop bridge.
+- `midi_configurator/desktop_service.py`: project, profile, and USB workflows.
 - `midi_configurator/core.py`: MIDI compilation and validation.
 - `midi_configurator/chocolate.py`: controller image decoding and write planning.
 - `midi_configurator/chocolate_transport.py`: native USB configuration protocol.
-- `midi_configurator/controller_ui.py`: reads, import, backup, and write workflow.
 - `midi_configurator/project.py`: empty projects and example helpers.
 - `midi_configurator/runtime_paths.py`: bundled resources and writable storage.
-- `midi_configurator/ui_scale.py`: shared fonts, global zoom, and scrollable content.
-- `midi_configurator/ui_dialogs.py`: application confirmations and errors that share zoom.
 - `midi_configurator/profiles/`: built-in profiles and evidence metadata.
 - `midi_configurator/test_*.py`: offline compiler and simulated controller tests.
 - `examples/`: semantic projects and the generic CC profile template.
 - `docs/screenshots/`: application screenshots for the README.
-- `docs/capture_screenshots.py`: window-only captures with read-only USB fixtures
-  and preference persistence disabled.
-- `requirements.txt`: runtime USB MIDI dependencies.
+- `docs/capture_screenshots.py`: actual compiled frontend captures with
+  read-only USB fixtures and isolated file/preference storage.
+- `docs/preview_server.py`: local test API backed by the actual Python service.
+- `requirements.txt`: Python desktop host and USB MIDI dependencies.
+- `requirements-docs.txt`: documentation browser dependencies.
 - `requirements-build.txt` and `Stompilot.spec`: executable build configuration.
 - `Setup Stompilot.cmd`, `Build Stompilot.cmd`, and `Launch Stompilot.cmd`: source
   setup, executable build, and launch helpers.
@@ -126,9 +148,61 @@ packet and static V09 normal-mode path.
 
 The regression suite checks known SysEx vectors, checksums, offsets and limits,
 profile validation, raw MIDI roundtrips, native controller import, configuration
-encoding, simulated USB responses, backups, and readback behavior. The GUI smoke
-test checks local editor workflows without writing to a controller.
+encoding, simulated USB responses, backups, readback behavior, and desktop
+service state. Svelte type checks and Playwright tests cover editing, raw byte
+preservation, confirmations, zoom, keyboard access, and narrow windows. The
+desktop smoke test checks the packaged interface and Python bridge without
+MIDI discovery or writing.
+
+`midi_configurator/test_desktop_ui.py` tests the compiled frontend against the
+actual isolated `DesktopService`. The unittest discovery command includes these
+checks, but they skip when the frontend build, Python Playwright, or its Chromium
+browser is unavailable. To enable and run them explicitly:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-docs.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
+.\.venv\Scripts\python.exe -m unittest midi_configurator.test_desktop_ui -v
+```
 
 Run the commands listed in the [README](../README.md#run-or-build-from-source).
 After source changes, rebuild the executable so released code and embedded
 profiles match the source.
+
+## Documentation screenshots
+
+The README images are captures of the compiled Svelte UI in Chromium, using
+Playwright. A `ThreadingHTTPServer` binds only to `127.0.0.1` and serves the local
+frontend and test bridge. That bridge delegates to the actual `DesktopService`
+with an owned temporary data directory and simulated discovery/USB transport.
+File pickers use temporary project copies; settings and exports stay inside
+that directory. The screenshot browser blocks external network requests.
+
+The use-case fixture is
+[tank_mini_live_boost.json](../examples/tank_mini_live_boost.json), compiled into
+a Chocolate configuration image by the real planner. A supplementary simulated
+CC assignment demonstrates the raw CC editor; the original fixture is restored
+before the write-preview capture. The helper explicitly requests the preview,
+never clicks the write button, and checks that there were zero write attempts.
+The fake transport rejects every write request.
+
+Each browser screenshot shows a fixture banner where the full window is
+captured. Action-editor images are crops of the actual rendered modal. These
+images document the UI, not a hardware write or a native WebView2 capture.
+
+To reproduce them after building the frontend:
+
+```powershell
+npm.cmd --prefix frontend ci
+npm.cmd --prefix frontend run build
+.\.venv\Scripts\python.exe -m pip install -r requirements-docs.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
+.\.venv\Scripts\python.exe docs/capture_screenshots.py
+```
+
+For integration checks, use `with PreviewServer() as preview` from
+`docs.preview_server`, inject its `BRIDGE_SCRIPT` before navigation, and open
+`preview.url`. `preview.service` is the isolated Python service;
+`preview.example_project`, `preview.device`, and `preview.write_attempts` expose
+the fixture and write-attempt counter. `preview.cancel_pickers = True` simulates
+file-dialog cancellation without changing a project.
