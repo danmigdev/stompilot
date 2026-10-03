@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+*.log
+.backups/
+build/
+dist/
+# Personal device snapshots, imports and development previews.
+/profiles/
+/research/*.json
+/research/*.bin
+/*.png
+.env
+.env.*

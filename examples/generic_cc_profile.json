@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "custom_cc_example",
+  "name": "Custom CC device example",
+  "protocol": "midi_cc",
+  "channel": 1,
+  "evidence": {
+    "status": "user_defined",
+    "note": "Example profile: replace the CC numbers and ON/OFF values with those documented for your device."
+  },
+  "notes": [
+    "CC16 and CC17 are editable examples, not universal assignments.",
+    "Save with a new ID and name, then import the JSON through Device profiles."
+  ],
+  "blocks": [
+    {
+      "id": "effect",
+      "label": "Custom effect",
+      "enable": {
+        "cc": 16,
+        "on": 127,
+        "off": 0
+      },
+      "models": [
+        {
+          "id": "current",
+          "label": "Effect in the preset",
+          "parameters": [
+            {
+              "id": "amount",
+              "label": "Amount",
+              "min": 0,
+              "max": 127,
+              "step": 1,
+              "default": 64,
+              "cc": 17
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

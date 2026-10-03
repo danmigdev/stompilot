@@ -1,0 +1,4597 @@
+{
+  "schema_version": 1,
+  "id": "tank_mini_v09",
+  "name": "TANK Mini - stock firmware V09",
+  "protocol": "tank_v09",
+  "firmware": "TANK MINI_009",
+  "device_actions": [
+    {
+      "id": "reload_current_preset",
+      "label": "Reload current preset",
+      "experimental": true,
+      "evidence": {
+        "status": "firmware_static_only",
+        "note": "Normal-mode reload path derived from stock V09 firmware analysis; not yet tested on physical hardware."
+      },
+      "warnings": [
+        "Experimental action: reloading the current preset has not yet been tested on physical hardware.",
+        "Reload restores all effect states and parameters from the saved preset, including Tremolo. Unsaved live edits are discarded; the preset stored in flash is not changed.",
+        "The reload path is verified statically for normal mode. Tuner or other special modes may defer it until normal mode resumes.",
+        "Use reload as the only action in its state so restored preset values are not combined with simultaneous edits."
+      ]
+    }
+  ],
+  "evidence": {
+    "status": "firmware_static_and_partial_device_check",
+    "note": "Profile derived from stock firmware V09. FX and MOD ON/OFF via CC confirmed by the user. MOD SysEx writes tested on the device; REV packets validated statically and not yet tested live from the Chocolate."
+  },
+  "notes": [
+    "Parameters use raw control values from 0 to 100. Display ranges in the catalog are metadata; no linear conversion to Hz, ms, or other units is applied.",
+    "Stock firmware does not support the continuous CC commands proposed in the experimental catalog. Parameters in this profile are encoded as SysEx.",
+    "Set the model on the device before using these actions.",
+    "A model change may load parameters asynchronously. For an ON/OFF and parameter sequence, set up the model in the preset first.",
+    "AMP and CAB: 20 model indices with shared parameter descriptors; commercial names have not been verified, so models are displayed by index."
+  ],
+  "sources": [
+    {
+      "title": "TANK MINI_009 firmware parameter catalog",
+      "note": "Parameter descriptors and offsets recovered from the stock V09 firmware."
+    },
+    {
+      "title": "V09 firmware analysis and stock CC map",
+      "note": "Static analysis of the stock firmware's MIDI command handlers."
+    },
+    {
+      "title": "Verified SysEx transport and framing",
+      "note": "SysEx framing cross-checked against device responses."
+    },
+    {
+      "title": "TANK V09 current-preset reload analysis",
+      "path": "research/tank_preset_reload.md",
+      "note": "Static normal-mode reload path and experimental packet; physical reload verification is pending."
+    }
+  ],
+  "blocks": [
+    {
+      "id": "fx",
+      "label": "FX",
+      "wire_id": 0,
+      "evidence": {
+        "status": "firmware_static",
+        "note": "Offsets and descriptors derived from the firmware; live control of these parameters still needs verification."
+      },
+      "toggle": {
+        "cc": 0,
+        "value": 0,
+        "evidence": {
+          "status": "user_confirmed",
+          "note": "The stock CC command toggles the state with each message; the value remains 0."
+        }
+      },
+      "models": [
+        {
+          "id": "0",
+          "label": "Noise Gate++",
+          "wire_value": 0,
+          "parameters": [
+            {
+              "id": "gate",
+              "label": "Gate",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 20,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "1",
+          "label": "Boost",
+          "wire_value": 1,
+          "parameters": [
+            {
+              "id": "gate",
+              "label": "Gate",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 20,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 22,
+              "display_range": {
+                "min": 0,
+                "max": 60,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "2",
+          "label": "Compress",
+          "wire_value": 2,
+          "parameters": [
+            {
+              "id": "gate",
+              "label": "Gate",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 20,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "sustain",
+              "label": "Sustain",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 22,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "attack",
+              "label": "Attack",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 24,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "level",
+              "label": "Level",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 26,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "amp",
+      "label": "AMP",
+      "wire_id": 1,
+      "evidence": {
+        "status": "firmware_static",
+        "note": "Offsets and descriptors derived from the firmware; live control of these parameters still needs verification."
+      },
+      "toggle": {
+        "cc": 1,
+        "value": 0,
+        "evidence": {
+          "status": "firmware_static",
+          "note": "The stock CC command toggles the state with each message; the value remains 0."
+        }
+      },
+      "models": [
+        {
+          "id": "0",
+          "label": "AMP - model 1 (index 0)",
+          "wire_value": 0,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "1",
+          "label": "AMP - model 2 (index 1)",
+          "wire_value": 1,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "2",
+          "label": "AMP - model 3 (index 2)",
+          "wire_value": 2,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "3",
+          "label": "AMP - model 4 (index 3)",
+          "wire_value": 3,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "4",
+          "label": "AMP - model 5 (index 4)",
+          "wire_value": 4,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "5",
+          "label": "AMP - model 6 (index 5)",
+          "wire_value": 5,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "6",
+          "label": "AMP - model 7 (index 6)",
+          "wire_value": 6,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "7",
+          "label": "AMP - model 8 (index 7)",
+          "wire_value": 7,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "8",
+          "label": "AMP - model 9 (index 8)",
+          "wire_value": 8,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "9",
+          "label": "AMP - model 10 (index 9)",
+          "wire_value": 9,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "10",
+          "label": "AMP - model 11 (index 10)",
+          "wire_value": 10,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "11",
+          "label": "AMP - model 12 (index 11)",
+          "wire_value": 11,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "12",
+          "label": "AMP - model 13 (index 12)",
+          "wire_value": 12,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "13",
+          "label": "AMP - model 14 (index 13)",
+          "wire_value": 13,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "14",
+          "label": "AMP - model 15 (index 14)",
+          "wire_value": 14,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "15",
+          "label": "AMP - model 16 (index 15)",
+          "wire_value": 15,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "16",
+          "label": "AMP - model 17 (index 16)",
+          "wire_value": 16,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "17",
+          "label": "AMP - model 18 (index 17)",
+          "wire_value": 17,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "18",
+          "label": "AMP - model 19 (index 18)",
+          "wire_value": 18,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "19",
+          "label": "AMP - model 20 (index 19)",
+          "wire_value": 19,
+          "parameters": [
+            {
+              "id": "gain",
+              "label": "Gain",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 32,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 34,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "bass",
+              "label": "Bass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 36,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mid",
+              "label": "Mid",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 38,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tre",
+              "label": "Tre",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 40,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mod",
+      "label": "MOD",
+      "wire_id": 2,
+      "evidence": {
+        "status": "device_checked",
+        "note": "Live writes to the MOD block verified; model and parameters in the current preset."
+      },
+      "toggle": {
+        "cc": 2,
+        "value": 0,
+        "evidence": {
+          "status": "user_confirmed",
+          "note": "The stock CC command toggles the state with each message; the value remains 0."
+        }
+      },
+      "models": [
+        {
+          "id": "0",
+          "label": "Chorus",
+          "wire_value": 0,
+          "parameters": [
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 3,
+              "unit": "raw",
+              "patch_offset": 44,
+              "display_range": {
+                "min": 1,
+                "max": 50,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 46,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 48,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "1",
+          "label": "Phaser",
+          "wire_value": 1,
+          "parameters": [
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 2,
+              "unit": "raw",
+              "patch_offset": 44,
+              "display_range": {
+                "min": 1,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "dry",
+              "label": "Dry",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 46,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "wet",
+              "label": "Wet",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 48,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "fb",
+              "label": "Fb",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 50,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "2",
+          "label": "Tremolo",
+          "wire_value": 2,
+          "parameters": [
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 39,
+              "unit": "raw",
+              "patch_offset": 44,
+              "display_range": {
+                "min": 1,
+                "max": 200,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 46,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "level",
+              "label": "Level",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 48,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "3",
+          "label": "Flanger",
+          "wire_value": 3,
+          "parameters": [
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 2,
+              "unit": "raw",
+              "patch_offset": 44,
+              "display_range": {
+                "min": 1,
+                "max": 50,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 46,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "fb",
+              "label": "Fb",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 48,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 50,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "4",
+          "label": "Vibrato",
+          "wire_value": 4,
+          "parameters": [
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 8,
+              "unit": "raw",
+              "patch_offset": 44,
+              "display_range": {
+                "min": 1,
+                "max": 110,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 5,
+              "unit": "raw",
+              "patch_offset": 46,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "5",
+          "label": "Univibe",
+          "wire_value": 5,
+          "parameters": [
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 9,
+              "unit": "raw",
+              "patch_offset": 44,
+              "display_range": {
+                "min": 1,
+                "max": 50,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 46,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 48,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "6",
+          "label": "Autofilter",
+          "wire_value": 6,
+          "parameters": [
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 3,
+              "unit": "raw",
+              "patch_offset": 44,
+              "display_range": {
+                "min": 1,
+                "max": 200,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "min",
+              "label": "Min",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 30,
+              "unit": "raw",
+              "patch_offset": 46,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "max",
+              "label": "Max",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 30,
+              "unit": "raw",
+              "patch_offset": 48,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 90,
+              "unit": "raw",
+              "patch_offset": 50,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "fb",
+              "label": "Fb",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 60,
+              "unit": "raw",
+              "patch_offset": 52,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dly",
+      "label": "DLY",
+      "wire_id": 3,
+      "evidence": {
+        "status": "firmware_static",
+        "note": "Offsets and descriptors derived from the firmware; live control of these parameters still needs verification."
+      },
+      "toggle": {
+        "cc": 3,
+        "value": 0,
+        "evidence": {
+          "status": "firmware_static",
+          "note": "The stock CC command toggles the state with each message; the value remains 0."
+        }
+      },
+      "models": [
+        {
+          "id": "0",
+          "label": "Analog",
+          "wire_value": 0,
+          "parameters": [
+            {
+              "id": "time",
+              "label": "Time",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 43,
+              "unit": "raw",
+              "patch_offset": 56,
+              "display_range": {
+                "min": 100,
+                "max": 1000,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "fb",
+              "label": "Fb",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 58,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 12,
+              "unit": "raw",
+              "patch_offset": 60,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "phaser",
+              "label": "Phaser",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 0,
+              "unit": "raw",
+              "patch_offset": 62,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "pitch",
+              "label": "Pitch",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 0,
+              "unit": "raw",
+              "patch_offset": 64,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "1",
+          "label": "Duck",
+          "wire_value": 1,
+          "parameters": [
+            {
+              "id": "time",
+              "label": "Time",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 66,
+              "unit": "raw",
+              "patch_offset": 56,
+              "display_range": {
+                "min": 100,
+                "max": 1000,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "fb",
+              "label": "Fb",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 58,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 60,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "unpack",
+              "label": "Unpack",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 62,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 64,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 5,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 66,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "2",
+          "label": "Dtype",
+          "wire_value": 2,
+          "parameters": [
+            {
+              "id": "time",
+              "label": "Time",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 51,
+              "unit": "raw",
+              "patch_offset": 56,
+              "display_range": {
+                "min": 50,
+                "max": 1000,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "fb",
+              "label": "Fb",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 14,
+              "unit": "raw",
+              "patch_offset": 58,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 15,
+              "unit": "raw",
+              "patch_offset": 60,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "grit",
+              "label": "Grit",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 5,
+              "unit": "raw",
+              "patch_offset": 62,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 64,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 5,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 66,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "3",
+          "label": "Dual",
+          "wire_value": 3,
+          "parameters": [
+            {
+              "id": "time",
+              "label": "Time",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 64,
+              "unit": "raw",
+              "patch_offset": 56,
+              "display_range": {
+                "min": 50,
+                "max": 500,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "fb",
+              "label": "Fb",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 30,
+              "unit": "raw",
+              "patch_offset": 58,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 60,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "t_mode",
+              "label": "T-Mode",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 7,
+              "unit": "raw",
+              "patch_offset": 62,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 64,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 5,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 66,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "4",
+          "label": "Lofi",
+          "wire_value": 4,
+          "parameters": [
+            {
+              "id": "time",
+              "label": "Time",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 58,
+              "unit": "raw",
+              "patch_offset": 56,
+              "display_range": {
+                "min": 100,
+                "max": 1000,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "fb",
+              "label": "Fb",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 25,
+              "unit": "raw",
+              "patch_offset": 58,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 15,
+              "unit": "raw",
+              "patch_offset": 60,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "grit",
+              "label": "Grit",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 5,
+              "unit": "raw",
+              "patch_offset": 62,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "speed",
+              "label": "Speed",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 64,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 5,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 66,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "rev",
+      "label": "REV",
+      "wire_id": 4,
+      "evidence": {
+        "status": "static_roundtrip",
+        "note": "Packets and offsets verified statically. Mix 5/10 has not yet been tested live from the Chocolate."
+      },
+      "toggle": {
+        "cc": 4,
+        "value": 0,
+        "evidence": {
+          "status": "firmware_static",
+          "note": "The stock CC command toggles the state with each message; the value remains 0."
+        }
+      },
+      "models": [
+        {
+          "id": "0",
+          "label": "Room",
+          "wire_value": 0,
+          "parameters": [
+            {
+              "id": "decay",
+              "label": "Decay",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 68,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 13,
+              "unit": "raw",
+              "patch_offset": 70,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hpass",
+              "label": "HPass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 80,
+              "unit": "raw",
+              "patch_offset": 72,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lpass",
+              "label": "LPass",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 80,
+              "unit": "raw",
+              "patch_offset": 74,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 76,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "1",
+          "label": "Hall",
+          "wire_value": 1,
+          "parameters": [
+            {
+              "id": "decay",
+              "label": "Decay",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 68,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 13,
+              "unit": "raw",
+              "patch_offset": 70,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hpass",
+              "label": "HPass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 80,
+              "unit": "raw",
+              "patch_offset": 72,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lpass",
+              "label": "LPass",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 80,
+              "unit": "raw",
+              "patch_offset": 74,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "depth",
+              "label": "Depth",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 76,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "2",
+          "label": "Swell",
+          "wire_value": 2,
+          "parameters": [
+            {
+              "id": "decay",
+              "label": "Decay",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 68,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 30,
+              "unit": "raw",
+              "patch_offset": 70,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hpass",
+              "label": "HPass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 60,
+              "unit": "raw",
+              "patch_offset": 72,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lpass",
+              "label": "LPass",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 60,
+              "unit": "raw",
+              "patch_offset": 74,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "riset",
+              "label": "RiseT",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 76,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "3",
+          "label": "Spring",
+          "wire_value": 3,
+          "parameters": [
+            {
+              "id": "decay",
+              "label": "Decay",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 68,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 13,
+              "unit": "raw",
+              "patch_offset": 70,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hpass",
+              "label": "HPass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 80,
+              "unit": "raw",
+              "patch_offset": 72,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lpass",
+              "label": "LPass",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 80,
+              "unit": "raw",
+              "patch_offset": 74,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "combs",
+              "label": "Combs",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 76,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "4",
+          "label": "Shimmer",
+          "wire_value": 4,
+          "parameters": [
+            {
+              "id": "decay",
+              "label": "Decay",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 68,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 25,
+              "unit": "raw",
+              "patch_offset": 70,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "tone",
+              "label": "Tone",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 75,
+              "unit": "raw",
+              "patch_offset": 72,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "pitch",
+              "label": "Pitch",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 74,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "amt",
+              "label": "Amt",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 80,
+              "unit": "raw",
+              "patch_offset": 76,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "5",
+          "label": "Cloud",
+          "wire_value": 5,
+          "parameters": [
+            {
+              "id": "decay",
+              "label": "Decay",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 40,
+              "unit": "raw",
+              "patch_offset": 68,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "mix",
+              "label": "Mix",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 30,
+              "unit": "raw",
+              "patch_offset": 70,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hpass",
+              "label": "HPass",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 60,
+              "unit": "raw",
+              "patch_offset": 72,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lpass",
+              "label": "LPass",
+              "index": 3,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 60,
+              "unit": "raw",
+              "patch_offset": 74,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "diff",
+              "label": "Diff",
+              "index": 4,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 50,
+              "unit": "raw",
+              "patch_offset": 76,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cab",
+      "label": "CAB",
+      "wire_id": 5,
+      "evidence": {
+        "status": "firmware_static",
+        "note": "Offsets and descriptors derived from the firmware; live control of these parameters still needs verification."
+      },
+      "toggle": {
+        "cc": 5,
+        "value": 0,
+        "evidence": {
+          "status": "firmware_static",
+          "note": "The stock CC command toggles the state with each message; the value remains 0."
+        }
+      },
+      "models": [
+        {
+          "id": "0",
+          "label": "CAB - model 1 (index 0)",
+          "wire_value": 0,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "1",
+          "label": "CAB - model 2 (index 1)",
+          "wire_value": 1,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "2",
+          "label": "CAB - model 3 (index 2)",
+          "wire_value": 2,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "3",
+          "label": "CAB - model 4 (index 3)",
+          "wire_value": 3,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "4",
+          "label": "CAB - model 5 (index 4)",
+          "wire_value": 4,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "5",
+          "label": "CAB - model 6 (index 5)",
+          "wire_value": 5,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "6",
+          "label": "CAB - model 7 (index 6)",
+          "wire_value": 6,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "7",
+          "label": "CAB - model 8 (index 7)",
+          "wire_value": 7,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "8",
+          "label": "CAB - model 9 (index 8)",
+          "wire_value": 8,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "9",
+          "label": "CAB - model 10 (index 9)",
+          "wire_value": 9,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "10",
+          "label": "CAB - model 11 (index 10)",
+          "wire_value": 10,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "11",
+          "label": "CAB - model 12 (index 11)",
+          "wire_value": 11,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "12",
+          "label": "CAB - model 13 (index 12)",
+          "wire_value": 12,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "13",
+          "label": "CAB - model 14 (index 13)",
+          "wire_value": 13,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "14",
+          "label": "CAB - model 15 (index 14)",
+          "wire_value": 14,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "15",
+          "label": "CAB - model 16 (index 15)",
+          "wire_value": 15,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "16",
+          "label": "CAB - model 17 (index 16)",
+          "wire_value": 16,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "17",
+          "label": "CAB - model 18 (index 17)",
+          "wire_value": 17,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "18",
+          "label": "CAB - model 19 (index 18)",
+          "wire_value": 18,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        },
+        {
+          "id": "19",
+          "label": "CAB - model 20 (index 19)",
+          "wire_value": 19,
+          "parameters": [
+            {
+              "id": "lvl",
+              "label": "Lvl",
+              "index": 0,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 100,
+              "unit": "raw",
+              "patch_offset": 80,
+              "display_range": {
+                "min": 0,
+                "max": 100,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "lcut",
+              "label": "Lcut",
+              "index": 1,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 20,
+              "unit": "raw",
+              "patch_offset": 82,
+              "display_range": {
+                "min": 20,
+                "max": 300,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            },
+            {
+              "id": "hcut",
+              "label": "Hcut",
+              "index": 2,
+              "min": 0,
+              "max": 100,
+              "step": 1,
+              "default": 180,
+              "unit": "raw",
+              "patch_offset": 84,
+              "display_range": {
+                "min": 50,
+                "max": 180,
+                "note": "Editor range reported by the firmware; conversion from the raw control value has not been established."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

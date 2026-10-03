@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "name": "Tremolo and solo boost",
+  "controller": {
+    "id": "chocolate_plus",
+    "max_sysex_bytes": 128
+  },
+  "pages": [
+    {
+      "name": "Page 1",
+      "switches": {
+        "A": {
+          "label": "Tremolo",
+          "mode": "alternating",
+          "states": [
+            {
+              "label": "Tremolo ON",
+              "actions": [
+                {
+                  "device_id": "tank_mini_v09",
+                  "channel": 1,
+                  "block_id": "mod",
+                  "model_id": "2",
+                  "type": "enable",
+                  "value": true
+                }
+              ]
+            },
+            {
+              "label": "Tremolo OFF",
+              "actions": [
+                {
+                  "device_id": "tank_mini_v09",
+                  "channel": 1,
+                  "block_id": "mod",
+                  "model_id": "2",
+                  "type": "enable",
+                  "value": false
+                }
+              ]
+            }
+          ]
+        },
+        "B": {
+          "label": "Solo boost",
+          "mode": "alternating",
+          "states": [
+            {
+              "label": "Boost ON / Reverb 20 / Delay 20",
+              "actions": [
+                {
+                  "device_id": "tank_mini_v09",
+                  "channel": 1,
+                  "block_id": "fx",
+                  "model_id": "1",
+                  "type": "enable",
+                  "value": true
+                },
+                {
+                  "device_id": "tank_mini_v09",
+                  "block_id": "rev",
+                  "channel": 1,
+                  "model_id": "1",
+                  "type": "parameter",
+                  "param_id": "mix",
+                  "value": 20
+                },
+                {
+                  "device_id": "tank_mini_v09",
+                  "block_id": "dly",
+                  "channel": 1,
+                  "model_id": "3",
+                  "type": "parameter",
+                  "param_id": "mix",
+                  "value": 20
+                }
+              ]
+            },
+            {
+              "label": "Reload saved preset",
+              "actions": [
+                {
+                  "device_id": "tank_mini_v09",
+                  "type": "reload_current_preset"
+                }
+              ]
+            }
+          ]
+        },
+        "C": {
+          "label": "Switch C",
+          "mode": "single",
+          "states": [
+            {
+              "label": "Sequence",
+              "actions": []
+            }
+          ]
+        },
+        "D": {
+          "label": "Switch D",
+          "mode": "single",
+          "states": [
+            {
+              "label": "Sequence",
+              "actions": []
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
