@@ -72,12 +72,26 @@ jobs:
       - name: Run Python and UI service integration tests
         run: |
           @'
-          import unittest
-          suite = unittest.defaultTestLoader.discover('midi_configurator', top_level_dir='.')
+          from pathlib import Path
+          import subprocess
+          import sys
+          # Tk objects from legacy tests must never be collected by browser/USB threads.
+          # Run every module, with the same strict checks, in a fresh interpreter.
+          runner = '''
+          import sys, unittest
+          suite = unittest.defaultTestLoader.loadTestsFromName(sys.argv[1])
           result = unittest.TextTestRunner(verbosity=2).run(suite)
           if result.skipped:
               print('Release checks require every test to run; skipped:', result.skipped)
           raise SystemExit(0 if result.wasSuccessful() and result.testsRun and not result.skipped else 1)
+          '''
+          modules = sorted(Path('midi_configurator').glob('test_*.py'))
+          if not modules:
+              raise SystemExit('No Python test modules found.')
+          for path in modules:
+              module = 'midi_configurator.' + path.stem
+              print('Running ' + module, flush=True)
+              subprocess.run([sys.executable, '-c', runner, module], check=True, timeout=180)
           '@ | .\.venv\Scripts\python.exe -
 
       - name: Run frontend interaction tests

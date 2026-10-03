@@ -253,8 +253,8 @@ The release contains `Stompilot.exe`, `tank_mini_live_boost.json`, and
 After committing and pushing the changes to release:
 
 ```powershell
-git tag -a v0.3.2 -m "Stompilot v0.3.2"
-git push origin v0.3.2
+git tag -a v0.3.3 -m "Stompilot v0.3.3"
+git push origin v0.3.3
 ```
 
 Use a new `vMAJOR.MINOR.PATCH` tag for each release. A suffix such as
