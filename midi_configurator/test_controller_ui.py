@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from . import controller_ui
+from .ui_scale import ZoomManager
 
 
 @dataclass
@@ -26,6 +27,7 @@ class ControllerUiTests(unittest.TestCase):
             self.root = tk.Tk()
         except tk.TclError as exc:
             self.skipTest(str(exc))
+        ZoomManager(self.root, persist=False)
         self.root.withdraw()
         self.temp = TemporaryDirectory()
         self.original = bytes(23646)
@@ -207,6 +209,23 @@ class ControllerUiTests(unittest.TestCase):
         callback.assert_not_called()
         self.assertNotIn("write", self.calls)
         self.assertEqual(list(Path(self.temp.name).glob("*.json")), [])
+
+    def test_controller_zoom_changes_fonts_without_reading_writing_or_loading(self):
+        callback = Mock()
+        self.create_dialog(on_load=callback)
+        self.dialog.read()
+        self.wait_idle()
+        calls = list(self.calls)
+        image = self.dialog.image
+        self.dialog.zoom.set_percent(200)
+        self.root.update_idletasks()
+        self.assertEqual(str(self.dialog.current_text.cget("font")), str(self.dialog.zoom.font("mono")))
+        self.assertEqual(self.dialog.zoom.font("mono").cget("size"), 20)
+        self.assertIsNotNone(self.dialog.scroll.horizontal_bar)
+        self.assertEqual(self.dialog.image, image)
+        self.assertEqual(self.calls, calls)
+        self.assertIsNone(self.dialog.write_button)
+        callback.assert_not_called()
 
     def test_import_discovery_failure_does_not_load_or_write(self):
         callback = Mock()

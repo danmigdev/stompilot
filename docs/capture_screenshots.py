@@ -5,8 +5,7 @@ Run on Windows with Pillow installed:
 
 No hardware MIDI ports are opened. USB screenshots show a simulated controller
 containing the exact commands from examples/tank_mini_live_boost.json. Captures
-are limited to this process's application windows, including its native notes
-messagebox; the desktop is never captured.
+are limited to this process's application windows; the desktop is never captured.
 """
 from __future__ import annotations
 
@@ -17,7 +16,6 @@ import json
 import os
 from pathlib import Path
 import sys
-import threading
 import time
 import tkinter as tk
 from tkinter import ttk
@@ -34,6 +32,7 @@ from midi_configurator.chocolate import CONFIG_SIZE, plan_project
 from midi_configurator.chocolate_transport import UsbDevice
 from midi_configurator.core import load_config
 from midi_configurator.controller_ui import ControllerDialog
+from midi_configurator.ui_scale import ZoomManager
 
 
 class WindowCapture:
@@ -44,16 +43,6 @@ class WindowCapture:
         self.user32 = ctypes.WinDLL("user32", use_last_error=True)
         self.user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
         self.user32.GetAncestor.restype = wintypes.HWND
-        self.user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
-        self.user32.GetWindow.restype = wintypes.HWND
-        self.user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-        self.user32.GetWindowTextW.restype = ctypes.c_int
-        self.user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-        self.user32.GetClassNameW.restype = ctypes.c_int
-        self.user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-        self.user32.GetWindowThreadProcessId.restype = wintypes.DWORD
-        self.user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
-        self.user32.PostMessageW.restype = wintypes.BOOL
 
     def settle(self, window):
         window.lift()
@@ -71,59 +60,6 @@ class WindowCapture:
         self.settle(window)
         handle = self.user32.GetAncestor(window.winfo_id(), 2)
         self.save_handle(handle, filename)
-
-    def notes(self, app):
-        """Capture the application's actual native Setup notes messagebox."""
-        owner = self.user32.GetAncestor(self.root.winfo_id(), 2)
-        errors = []
-        callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-        self.user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
-        self.user32.EnumWindows.restype = wintypes.BOOL
-
-        def find_messagebox():
-            matches = []
-            @callback_type
-            def visit(handle, _):
-                pid = wintypes.DWORD()
-                self.user32.GetWindowThreadProcessId(handle, ctypes.byref(pid))
-                if pid.value != os.getpid() or self.user32.GetWindow(handle, 4) != owner:
-                    return True
-                title = ctypes.create_unicode_buffer(256)
-                class_name = ctypes.create_unicode_buffer(256)
-                self.user32.GetWindowTextW(handle, title, len(title))
-                self.user32.GetClassNameW(handle, class_name, len(class_name))
-                if title.value == "Setup notes" and class_name.value == "#32770":
-                    matches.append(handle)
-                return True
-            self.user32.EnumWindows(visit, 0)
-            return matches[0] if matches else None
-
-        def capture_native():
-            handle = None
-            try:
-                deadline = time.monotonic() + 10
-                while handle is None and time.monotonic() < deadline:
-                    handle = find_messagebox()
-                    time.sleep(0.05)
-                if handle is None:
-                    raise RuntimeError("The native Setup notes dialog did not appear.")
-                time.sleep(0.25)
-                self.save_handle(handle, "setup-notes.png")
-            except Exception as error:
-                errors.append(error)
-            finally:
-                if handle is not None:
-                    self.user32.PostMessageW(handle, 0x0010, 0, 0)
-
-        thread = threading.Thread(target=capture_native, daemon=True)
-        thread.start()
-        app.show_notes()
-        thread.join(timeout=11)
-        if errors:
-            raise errors[0]
-        if thread.is_alive():
-            raise RuntimeError("The native Setup notes capture did not finish.")
-
 
 def wait_idle(root, dialog):
     deadline = time.monotonic() + 5
@@ -165,6 +101,8 @@ def capture_all(directory, project_path):
         raise RuntimeError("Application-window capture requires Windows.")
     root = tk.Tk()
     try:
+        zoom = ZoomManager(root, persist=False)
+        zoom.reset()
         app = StompilotApp(root, start_screen=True)
         root.geometry("1280x900+20+20")
         capture = WindowCapture(root, directory)
@@ -176,7 +114,6 @@ def capture_all(directory, project_path):
         app.state_index = 1
         app.refresh()
         capture.save(root, "reload-state.png")
-        capture.notes(app)
         states = project["pages"][0]["switches"]["B"]["states"]
         for filename, action in (
             ("effect-toggle-editor.png", states[0]["actions"][0]),
@@ -228,6 +165,10 @@ def capture_all(directory, project_path):
         write_dialog.tabs.select(1)
         capture.save(write_dialog, "controller-current.png")
         write_dialog.close()
+        zoom.set_percent(150)
+        root.geometry("1440x1000+20+20")
+        capture.save(root, "zoomed-interface.png")
+        zoom.reset()
         return sorted(capture.results, key=lambda item: item["file"])
     finally:
         for child in root.winfo_children():

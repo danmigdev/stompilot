@@ -12,3 +12,4 @@ dist/
 /*.png
 .env
 .env.*
+/settings.json

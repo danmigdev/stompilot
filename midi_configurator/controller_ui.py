@@ -9,16 +9,20 @@ import json
 from pathlib import Path
 from queue import Empty, Queue
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 
 if __package__:
     from .chocolate import config_summary, plan_project
     from .chocolate_transport import UsbChocolate, list_usb_devices
     from .runtime_paths import data_directory
+    from .ui_scale import ScrollableFrame, get_zoom
+    from . import ui_dialogs as messagebox
 else:
     from chocolate import config_summary, plan_project
     from chocolate_transport import UsbChocolate, list_usb_devices
     from runtime_paths import data_directory
+    from ui_scale import ScrollableFrame, get_zoom
+    import ui_dialogs as messagebox
 
 
 BACKUP_DIR = data_directory() / ".backups"
@@ -52,6 +56,7 @@ class ControllerDialog(tk.Toplevel):
         if on_load is None and project is None:
             raise ValueError("A project is required for controller programming.")
         super().__init__(parent)
+        self.zoom = get_zoom(parent)
         self.on_load, self.import_mode = on_load, on_load is not None
         self.import_ready = False
         self.title("Chocolate Plus · Read controller configuration" if self.import_mode else
@@ -72,16 +77,22 @@ class ControllerDialog(tk.Toplevel):
         self.info = tk.StringVar(value="Connect Chocolate Plus by USB and close MidiSuite before connecting.")
         self.status = tk.StringVar(value="Choose the controller, then read its configuration.")
         self._build()
+        self.zoom.listen(self, self._zoom_changed)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.poll_id = self.after(80, self._drain)
         self.scan()
 
     def _build(self):
-        frame = ttk.Frame(self, padding=22)
-        frame.pack(fill="both", expand=True)
+        self.container = ttk.Frame(self, padding=self.zoom.px(22))
+        self.container.pack(fill="both", expand=True)
+        self.zoom.toolbar(self.container).pack(anchor="e", pady=(0, 12))
+        self.scroll = ScrollableFrame(self.container, horizontal=True)
+        self.scroll.pack(fill="both", expand=True)
+        frame = self.scroll.content
         ttk.Label(frame, text="Read Chocolate Plus" if self.import_mode else
                   "Configure Chocolate Plus", style="Section.TLabel").pack(anchor="w")
-        ttk.Label(frame, textvariable=self.info, style="Muted.TLabel", wraplength=940).pack(anchor="w", pady=(6, 14))
+        self.info_label = ttk.Label(frame, textvariable=self.info, style="Muted.TLabel", wraplength=940)
+        self.info_label.pack(anchor="w", pady=(6, 14))
         row = ttk.Frame(frame)
         row.pack(fill="x")
         self.device_box = ttk.Combobox(row, textvariable=self.device_name, state="readonly", width=37)
@@ -103,7 +114,8 @@ class ControllerDialog(tk.Toplevel):
         self.tabs.add(current, text="Current controller configuration")
         self.current_text = self._text(current)
         self._set_text(self.current_text, "Read the controller to inspect its saved configuration.")
-        ttk.Label(frame, textvariable=self.status, style="Muted.TLabel", wraplength=930).pack(anchor="w", pady=(14, 8))
+        self.status_label = ttk.Label(frame, textvariable=self.status, style="Muted.TLabel", wraplength=930)
+        self.status_label.pack(anchor="w", pady=(14, 8))
         self.progress = ttk.Progressbar(frame, mode="indeterminate")
         self.progress.pack(fill="x", pady=(0, 12))
         footer = ttk.Frame(frame)
@@ -121,11 +133,22 @@ class ControllerDialog(tk.Toplevel):
             self.write_button = ttk.Button(footer, text="Write project to controller", style="Accent.TButton", command=self.write)
             self.write_button.pack(side="right", padx=10)
         self._controls()
+        self.scroll.canvas.bind("<Configure>", self._wrap_text, add="+")
+
+    def _zoom_changed(self, _percent):
+        self.container.configure(padding=self.zoom.px(22))
+        self.zoom.fit_window(self, 1000, 740)
+        self._wrap_text()
+
+    def _wrap_text(self, _event=None):
+        width = max(160, self.scroll.canvas.winfo_width() - self.zoom.px(24))
+        self.info_label.configure(wraplength=width)
+        self.status_label.configure(wraplength=width)
 
     @staticmethod
     def _text(parent):
         area = tk.Text(parent, bg="#1b2432", fg="#edf4ff", wrap="word", relief="flat",
-                       font=("Consolas", 10), padx=16, pady=14, state="disabled")
+                       font=get_zoom(parent).font("mono"), padx=16, pady=14, state="disabled")
         scroll = ttk.Scrollbar(parent, command=area.yview)
         scroll.pack(side="right", fill="y")
         area.pack(side="left", fill="both", expand=True)

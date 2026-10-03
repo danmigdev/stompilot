@@ -6,14 +6,15 @@ copy of the controller configuration, and apply it over USB when ready.
 
 ## Download and start
 
-Download [Stompilot.exe from release v0.1.0](https://github.com/danmigdev/stompilot/releases/tag/v0.1.0)
+Download [Stompilot.exe from release v0.2.0](https://github.com/danmigdev/stompilot/releases/tag/v0.2.0)
 and open it from a writable folder. The portable Windows app includes its Python
 runtime and USB MIDI dependencies: no Python installation or setup script is
 needed. In a source checkout, **Launch Stompilot.cmd** prefers the built executable.
 
 The built-in TANK profile travels with the executable. Imported profiles are
 stored in `profiles/` beside it, and controller backups in `.backups/`. Copy those
-folders too when moving existing data. Save project files wherever you choose.
+folders and `settings.json` when moving existing data. Save project files
+wherever you choose.
 
 ## Start from a file or a controller
 
@@ -89,10 +90,29 @@ selecting it in Stompilot does not change the hardware's effect model.
 | ![Effect toggle action editor](docs/screenshots/effect-toggle-editor.png) | ![Effect parameter action editor](docs/screenshots/parameter-editor.png) | ![Experimental reload action editor](docs/screenshots/reload-action-editor.png) |
 
 Review the MIDI preview after editing. Reload must be the only action in its
-state. **Setup notes** explains required preset settings and commands that still
-need a hardware test; it does not modify the project or controller.
+state. Required preset settings and verification status remain in the profile
+information and the guidance beneath the preview.
 
-![Setup notes for preset requirements and verification status](docs/screenshots/setup-notes.png)
+## Adjust the interface size
+
+Use the global **Zoom** controls: **-**, **+**, the percentage, and **Reset**.
+Zoom ranges from 75% to 200% in 25-point steps.
+They resize application text throughout the welcome screen, editor, action
+dialogs, controller windows, and application confirmations and errors.
+Use the scrollbars to reach content in smaller windows at higher zoom.
+
+| Shortcut | Action |
+| --- | --- |
+| Ctrl + + | Increase zoom |
+| Ctrl + - | Decrease zoom |
+| Ctrl + 0 | Reset to 100% |
+| Ctrl + mouse wheel | Increase or decrease zoom |
+
+Zoom is saved in `settings.json`, separately from projects. Changing zoom does
+not mark a project as modified or change MIDI assignments. Windows file pickers
+use their system appearance.
+
+![Project editor with global interface zoom at 150 percent](docs/screenshots/zoomed-interface.png)
 
 ## Edit assignments read from the Chocolate
 

@@ -3,6 +3,19 @@
 The [README](../README.md) covers the application workflows and screenshots.
 These notes describe controller write scope, device profiles, and source layout.
 
+## Interface preferences
+
+Global zoom affects application text, controls, dialogs, and application
+confirmations and errors. Use the Zoom controls or Ctrl + +, Ctrl + -, Ctrl + 0,
+and Ctrl + mouse wheel. Zoom ranges from 75% to 200% in 25-point steps.
+Large content remains available through scrolling.
+Windows file pickers retain their system appearance.
+
+Zoom is stored in `settings.json`, separately from projects. It does not alter
+a project's MIDI assignments or its local modification state. The documentation
+capture helper disables preference persistence so screenshots do
+not change the user's saved zoom setting.
+
 ## Controller write scope
 
 A project replaces the Advanced Custom short-press assignments for switches A-D
@@ -96,10 +109,14 @@ packet and static V09 normal-mode path.
 - `midi_configurator/controller_ui.py`: reads, import, backup, and write workflow.
 - `midi_configurator/project.py`: empty projects and example helpers.
 - `midi_configurator/runtime_paths.py`: bundled resources and writable storage.
+- `midi_configurator/ui_scale.py`: shared fonts, global zoom, and scrollable content.
+- `midi_configurator/ui_dialogs.py`: application confirmations and errors that share zoom.
 - `midi_configurator/profiles/`: built-in profiles and evidence metadata.
 - `midi_configurator/test_*.py`: offline compiler and simulated controller tests.
 - `examples/`: semantic projects and the generic CC profile template.
 - `docs/screenshots/`: application screenshots for the README.
+- `docs/capture_screenshots.py`: window-only captures with read-only USB fixtures
+  and preference persistence disabled.
 - `requirements.txt`: runtime USB MIDI dependencies.
 - `requirements-build.txt` and `Stompilot.spec`: executable build configuration.
 - `Setup Stompilot.cmd`, `Build Stompilot.cmd`, and `Launch Stompilot.cmd`: source

@@ -9,18 +9,22 @@ import re
 import sys
 import tkinter as tk
 from types import SimpleNamespace
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog
 
 if __package__:
     from .core import (ValidationError, load_profiles, validate_profile, compile_action,
                        compile_state, validate_config, load_config, save_config)
     from .project import new_project, empty_page, normalize_project
     from .runtime_paths import resource_dir, profile_directory
+    from .ui_scale import ZoomManager, ScrollableFrame, get_zoom
+    from . import ui_dialogs as messagebox
 else:
     from core import (ValidationError, load_profiles, validate_profile, compile_action,
                       compile_state, validate_config, load_config, save_config)
     from project import new_project, empty_page, normalize_project
     from runtime_paths import resource_dir, profile_directory
+    from ui_scale import ZoomManager, ScrollableFrame, get_zoom
+    import ui_dialogs as messagebox
 
 BUNDLED_PROFILE_DIR = resource_dir() / "profiles"
 PROFILE_DIR = profile_directory()
@@ -69,17 +73,31 @@ def description(action, profiles):
     return profile["name"], block["label"], target, value
 
 
+def fit_action_window(window, parent, content, zoom):
+    """Keep the editor footer visible while larger text scrolls inside the window."""
+    window.update_idletasks()
+    width = min(max(zoom.px(480), content.winfo_reqwidth() + 16), window.winfo_screenwidth() - 60)
+    height = min(content.winfo_reqheight() + zoom.px(115), window.winfo_screenheight() - 100)
+    x = max(20, min(parent.winfo_rootx() + 180, window.winfo_screenwidth() - width - 20))
+    y = max(20, min(parent.winfo_rooty() + 65, window.winfo_screenheight() - height - 70))
+    window.geometry(f"{width}x{height}+{x}+{y}")
+
+
 class ActionDialog(tk.Toplevel):
     def __init__(self, parent, profiles, action=None):
         super().__init__(parent)
+        self.zoom = get_zoom(self)
         self.profiles, self.result, self.original = profiles, None, action or {}
         self.title("Edit action" if action else "Add action")
         self.configure(bg=BG)
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.transient(parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
-        panel = ttk.Frame(self, padding=24)
+        self.zoom.toolbar(self).pack(fill="x", padx=24, pady=(10, 0))
+        self.scroll = ScrollableFrame(self, horizontal=True)
+        self.scroll.pack(fill="both", expand=True)
+        panel = ttk.Frame(self.scroll.content, padding=24)
         panel.pack(fill="both", expand=True)
         self.device = tk.StringVar()
         self.block = tk.StringVar()
@@ -109,18 +127,23 @@ class ActionDialog(tk.Toplevel):
                                    values=("ON", "OFF"), state="readonly", width=10)
         self.slider = ttk.Scale(self.value_frame, from_=0, to=100, command=self._slide)
         self.spin = ttk.Spinbox(self.value_frame, textvariable=self.number, from_=0, to=100, width=7)
-        ttk.Label(panel, textvariable=self.hint, style="Muted.TLabel", wraplength=440).grid(
+        self.hint_label = ttk.Label(panel, textvariable=self.hint, style="Muted.TLabel", wraplength=440)
+        self.hint_label.grid(
             row=11, column=0, columnspan=3, sticky="w", pady=(8, 14))
         self.channel_label = ttk.Label(panel, text="MIDI channel")
         self.channel_label.grid(row=12, column=0, sticky="w")
         self.channel_box = ttk.Spinbox(panel, textvariable=self.channel, from_=1, to=16, width=7)
         self.channel_box.grid(row=12, column=1, sticky="w")
-        ttk.Label(panel, textvariable=self.preview, style="Muted.TLabel", wraplength=440).grid(
+        self.preview_label = ttk.Label(panel, textvariable=self.preview, style="Muted.TLabel", wraplength=440)
+        self.preview_label.grid(
             row=13, column=0, columnspan=3, sticky="w", pady=16)
-        buttons = ttk.Frame(panel)
-        buttons.grid(row=14, column=0, columnspan=3, sticky="e")
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="left", padx=8)
-        ttk.Button(buttons, text="Save action", style="Accent.TButton", command=self.accept).pack(side="left")
+        buttons = ttk.Frame(self, padding=(24, 0, 24, 12))
+        buttons.pack(fill="x")
+        buttons.columnconfigure(0, weight=1)
+        buttons_inner = ttk.Frame(buttons)
+        buttons_inner.pack(side="right")
+        ttk.Button(buttons_inner, text="Cancel", command=self.destroy).pack(side="left", padx=8)
+        ttk.Button(buttons_inner, text="Save action", style="Accent.TButton", command=self.accept).pack(side="left")
         self.device_box = self.boxes["Device"]
         self.block_box = self.boxes["Block"]
         self.model_box = self.boxes["Effect already selected in the preset"]
@@ -138,8 +161,11 @@ class ActionDialog(tk.Toplevel):
         self.device.set(profiles[first_id]["name"])
         self._device_changed(initial=True)
         self.bind("<Escape>", lambda e: self.destroy())
-        self.update_idletasks()
-        self.geometry(f"+{parent.winfo_rootx() + 180}+{parent.winfo_rooty() + 65}")
+        def zoom_layout(percent):
+            self.hint_label.configure(wraplength=self.zoom.px(440))
+            self.preview_label.configure(wraplength=self.zoom.px(440))
+            fit_action_window(self, parent, panel, self.zoom)
+        self.zoom.listen(self, zoom_layout)
 
     def selected_profile(self):
         return next(p for p in self.profiles.values() if p["name"] == self.device.get())
@@ -280,10 +306,11 @@ class RawMidiDialog(tk.Toplevel):
     """Edit an imported command without assigning an unproven device or model."""
     def __init__(self, parent, profiles, action):
         super().__init__(parent)
+        self.zoom = get_zoom(self)
         self.profiles, self.result = profiles, None
         self.title("Edit imported MIDI")
         self.configure(bg=BG)
-        self.resizable(False, False)
+        self.resizable(True, True)
         self.transient(parent)
         self.grab_set()
         message = bytes.fromhex(action["message_hex"])
@@ -292,7 +319,10 @@ class RawMidiDialog(tk.Toplevel):
         self.cc = tk.StringVar(value=str(message[1]))
         self.value = tk.StringVar(value=str(message[2] if len(message) > 2 else 0))
         self.preview = tk.StringVar()
-        panel = ttk.Frame(self, padding=24)
+        self.zoom.toolbar(self).pack(fill="x", padx=24, pady=(10, 0))
+        self.scroll = ScrollableFrame(self, horizontal=True)
+        self.scroll.pack(fill="both", expand=True)
+        panel = ttk.Frame(self.scroll.content, padding=24)
         panel.pack(fill="both", expand=True)
         ttk.Label(panel, text="Imported controller command", style="Section.TLabel").pack(anchor="w")
         ttk.Label(panel, text="Chocolate stores MIDI commands, not the current effect settings on the target device.",
@@ -300,7 +330,7 @@ class RawMidiDialog(tk.Toplevel):
         if self.sysex:
             ttk.Label(panel, text="SysEx message (hex)").pack(anchor="w", pady=(0, 6))
             self.hex_text = tk.Text(panel, width=56, height=6, bg=PANEL, fg=ACCENT, insertbackground=FG,
-                                    font=("Consolas", 10), wrap="word", padx=10, pady=10, relief="flat")
+                                    font=self.zoom.font("mono"), wrap="word", padx=10, pady=10, relief="flat")
             self.hex_text.pack(fill="x")
             self.hex_text.insert("1.0", action["message_hex"])
             self.hex_text.edit_modified(False)
@@ -314,14 +344,13 @@ class RawMidiDialog(tk.Toplevel):
                 ttk.Spinbox(row, textvariable=variable, from_=low, to=high, width=8).pack(side="left")
                 variable.trace_add("write", lambda *args: self._update_preview())
         ttk.Label(panel, textvariable=self.preview, style="Muted.TLabel", wraplength=500).pack(anchor="w", pady=18)
-        buttons = ttk.Frame(panel)
+        buttons = ttk.Frame(self, padding=(24, 0, 24, 12))
         buttons.pack(fill="x")
         ttk.Button(buttons, text="Save action", style="Accent.TButton", command=self.accept).pack(side="right")
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right", padx=8)
         self.bind("<Escape>", lambda e: self.destroy())
         self._update_preview()
-        self.update_idletasks()
-        self.geometry(f"+{parent.winfo_rootx() + 180}+{parent.winfo_rooty() + 100}")
+        self.zoom.listen(self, lambda percent: fit_action_window(self, parent, panel, self.zoom))
 
     def _changed(self, event=None):
         if self.hex_text.edit_modified():
@@ -359,6 +388,7 @@ class StompilotApp(ttk.Frame):
     def __init__(self, root, project=None, *, start_screen=False):
         super().__init__(root)
         self.root, self.profiles = root, load_device_profiles()
+        self.zoom = get_zoom(root)
         incoming = project or new_project(example=False)
         validate_config(incoming, self.profiles)
         self.project = normalize_project(incoming)
@@ -383,25 +413,28 @@ class StompilotApp(ttk.Frame):
         self.root.bind("<Control-s>", lambda e: self.save_project())
         self.root.bind("<Control-o>", lambda e: self.open_project())
         self.refresh()
+        self.zoom.listen(self, self._zoom_layout)
         self._refresh_source()
         if start_screen:
             self.show_startup()
 
     def _theme(self):
         self.root.title("Stompilot")
-        self.root.geometry("1280x820")
-        self.root.minsize(1050, 710)
+        available_width = max(320, self.root.winfo_screenwidth() - 60)
+        available_height = max(240, self.root.winfo_screenheight() - 100)
+        self.root.geometry(f"{min(1280, available_width)}x{min(820, available_height)}")
+        self.root.minsize(min(1050, available_width), min(710, available_height))
         self.root.configure(bg=BG)
-        self.root.option_add("*Font", ("Segoe UI", 10))
+        self.root.option_add("*Font", self.zoom.font("body"))
         style = ttk.Style(self.root)
         style.theme_use("clam")
-        style.configure(".", background=BG, foreground=FG, font=("Segoe UI", 10))
+        style.configure(".", background=BG, foreground=FG, font=self.zoom.font("body"))
         style.configure("TFrame", background=BG)
         style.configure("Panel.TFrame", background=PANEL)
         style.configure("TLabel", background=BG, foreground=FG)
         style.configure("Muted.TLabel", foreground=MUTED)
-        style.configure("Title.TLabel", font=("Segoe UI", 21, "bold"))
-        style.configure("Section.TLabel", font=("Segoe UI", 12, "bold"))
+        style.configure("Title.TLabel", font=self.zoom.font("title"))
+        style.configure("Section.TLabel", font=self.zoom.font("section"))
         style.configure("TButton", background=RAISED, foreground=FG, padding=(12, 8), borderwidth=0)
         style.map("TButton", background=[("active", "#33435a"), ("disabled", PANEL)],
                   foreground=[("disabled", MUTED)])
@@ -415,7 +448,7 @@ class StompilotApp(ttk.Frame):
                   foreground=[("readonly", FG), ("disabled", MUTED)], selectbackground=[("readonly", RAISED)])
         style.configure("TSpinbox", fieldbackground=RAISED, foreground=FG, arrowsize=16, padding=7)
         style.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=FG,
-                        rowheight=35, borderwidth=0, bordercolor=PANEL, lightcolor=PANEL, darkcolor=PANEL, font=("Segoe UI", 10))
+                        rowheight=self.zoom.px(35), borderwidth=0, bordercolor=PANEL, lightcolor=PANEL, darkcolor=PANEL, font=self.zoom.font("body"))
         style.configure("Treeview.Heading", background=RAISED, foreground=MUTED, padding=8, bordercolor=RAISED, lightcolor=RAISED, darkcolor=RAISED)
         style.map("Treeview", background=[("selected", "#24524f")], foreground=[("selected", FG)])
         style.configure("TNotebook", background=BG, borderwidth=0, bordercolor=BG, lightcolor=BG, darkcolor=BG)
@@ -425,27 +458,34 @@ class StompilotApp(ttk.Frame):
         self.root.option_add("*TCombobox*Listbox.background", RAISED)
         self.root.option_add("*TCombobox*Listbox.foreground", FG)
         self.root.option_add("*TCombobox*Listbox.selectBackground", "#24524f")
+        self.zoom.refresh_styles()
 
     def _build(self):
-        header = ttk.Frame(self, padding=(24, 19, 24, 14))
+        zoom_bar = ttk.Frame(self, padding=(24, 8, 24, 0))
+        zoom_bar.pack(fill="x")
+        self.zoom.toolbar(zoom_bar).pack(side="right")
+        self.scroll_view = ScrollableFrame(self, horizontal=True)
+        self.scroll_view.pack(fill="both", expand=True)
+        content = self.scroll_view.content
+        header = ttk.Frame(content, padding=(24, 19, 24, 14))
         header.pack(fill="x")
-        ttk.Label(header, text="Stompilot", style="Title.TLabel", font=("Segoe UI", 21, "bold")).pack(side="left")
+        ttk.Label(header, text="Stompilot", style="Title.TLabel", font=self.zoom.font("title")).pack(side="left")
         ttk.Label(header, text="MIDI Configurator", style="Muted.TLabel").pack(side="left", padx=16)
         for label, command in [("Export messages", self.export_messages), ("Save project", self.save_project),
                                ("Open", self.open_project), ("New", self.new)]:
             ttk.Button(header, text=label, command=command).pack(side="right", padx=(8, 0))
-        name_row = ttk.Frame(self, padding=(24, 0, 24, 16))
+        name_row = ttk.Frame(content, padding=(24, 0, 24, 16))
         name_row.pack(fill="x")
         ttk.Label(name_row, text="Project", style="Muted.TLabel").pack(side="left", padx=(0, 12))
         ttk.Entry(name_row, textvariable=self.project_name, width=38).pack(side="left")
         ttk.Button(name_row, text="Write to controller", command=self.configure_controller).pack(side="right")
         ttk.Button(name_row, text="Read controller", command=self.read_controller).pack(side="right", padx=8)
-        source_row = ttk.Frame(self, padding=(24, 0, 24, 14))
+        source_row = ttk.Frame(content, padding=(24, 0, 24, 14))
         source_row.pack(fill="x")
         self.source_label = ttk.Label(source_row, textvariable=self.source_text, style="Muted.TLabel", wraplength=1150)
         self.source_label.pack(anchor="w", fill="x")
         source_row.bind("<Configure>", lambda event: self.source_label.configure(wraplength=max(200, event.width - 48)))
-        body = ttk.Frame(self, padding=(24, 0, 24, 12))
+        body = ttk.Frame(content, padding=(24, 0, 24, 12))
         body.pack(fill="both", expand=True)
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
@@ -454,7 +494,7 @@ class StompilotApp(ttk.Frame):
         ttk.Label(sidebar, text="Pages", style="Section.TLabel").pack(anchor="w", pady=(4, 12))
         self.page_list = tk.Listbox(sidebar, width=18, height=7, bg=PANEL, fg=FG,
             selectbackground="#24524f", selectforeground=ACCENT, borderwidth=0, highlightthickness=0,
-            activestyle="none", exportselection=False, font=("Segoe UI", 11))
+            activestyle="none", exportselection=False, font=self.zoom.font("page"))
         self.page_list.pack(fill="x")
         self.page_list.bind("<<ListboxSelect>>", self._page_selected)
         ttk.Button(sidebar, text="Add page", command=self.add_page).pack(fill="x", pady=(12, 6))
@@ -474,7 +514,7 @@ class StompilotApp(ttk.Frame):
         self.switch_buttons = {}
         for letter in "ABCD":
             button = tk.Button(cards, text=letter, bg=PANEL, fg=FG, activebackground=RAISED,
-                activeforeground=ACCENT, bd=0, relief="flat", cursor="hand2", font=("Segoe UI", 12, "bold"),
+                activeforeground=ACCENT, bd=0, relief="flat", cursor="hand2", font=self.zoom.font("switch"),
                 height=2, command=lambda l=letter: self.select_switch(l))
             button.pack(side="left", fill="x", expand=True, padx=(0, 8))
             self.switch_buttons[letter] = button
@@ -520,15 +560,18 @@ class StompilotApp(ttk.Frame):
         ttk.Label(preview_header, textvariable=self.output_title, style="Section.TLabel").pack(side="left")
         self.copy_button = ttk.Button(preview_header, text="Copy for MidiSuite", command=self.copy_output)
         self.copy_button.pack(side="right")
-        self.details_button = ttk.Button(preview_header, text="Setup notes", command=self.show_notes)
-        self.details_button.pack(side="right", padx=(0, 8))
         self.hex_text = tk.Text(main, height=3, bg=PANEL, fg=ACCENT, insertbackground=FG,
-            font=("Consolas", 11), wrap="word", relief="flat", padx=14, pady=10, state="disabled")
+            font=self.zoom.font("preview"), wrap="word", relief="flat", padx=14, pady=10, state="disabled")
         self.hex_text.grid(row=7, column=0, sticky="ew")
         self.guidance_label = ttk.Label(main, textvariable=self.guidance, style="Muted.TLabel", wraplength=850)
         self.guidance_label.grid(row=8, column=0, sticky="ew", pady=(8, 0))
         main.bind("<Configure>", lambda event: self.guidance_label.configure(wraplength=max(200, event.width - 12)))
-        ttk.Label(self, textvariable=self.status, style="Muted.TLabel", padding=(24, 8, 24, 12)).pack(side="bottom", fill="x", before=body)
+        ttk.Label(content, textvariable=self.status, style="Muted.TLabel", padding=(24, 8, 24, 12)).pack(side="bottom", fill="x", before=body)
+
+    def _zoom_layout(self, percent):
+        for column, width in (("device", 240), ("block", 65), ("action", 240), ("value", 100)):
+            self.actions.column(column, width=self.zoom.px(width), minwidth=self.zoom.px(55))
+        self.profile_names.configure(wraplength=self.zoom.px(165))
 
     def selected_switch(self):
         return self.project["pages"][self.page_index]["switches"][self.switch_letter]
@@ -550,10 +593,15 @@ class StompilotApp(ttk.Frame):
         self.root.title("Stompilot")
         self.startup_frame = ttk.Frame(self.root, padding=36)
         self.startup_frame.pack(fill="both", expand=True)
-        panel = ttk.Frame(self.startup_frame)
-        panel.place(relx=0.5, rely=0.46, anchor="center")
-        ttk.Label(panel, text="Stompilot", style="Title.TLabel", font=("Segoe UI", 21, "bold")).pack(anchor="w")
-        ttk.Label(panel, text="Choose where to start", style="Section.TLabel", font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(22, 8))
+        self.zoom.toolbar(self.startup_frame).pack(anchor="e", pady=(0, 18))
+        startup_scroll = ScrollableFrame(self.startup_frame, horizontal=True)
+        startup_scroll.pack(fill="both", expand=True)
+        startup_scroll.content.columnconfigure(0, weight=1)
+        startup_scroll.content.rowconfigure((0, 2), weight=1)
+        panel = ttk.Frame(startup_scroll.content, padding=12)
+        panel.grid(row=1, column=0)
+        ttk.Label(panel, text="Stompilot", style="Title.TLabel", font=self.zoom.font("title")).pack(anchor="w")
+        ttk.Label(panel, text="Choose where to start", style="Section.TLabel", font=self.zoom.font("welcome")).pack(anchor="w", pady=(22, 8))
         ttk.Label(panel, text="Open a saved project or read the assignments stored on Chocolate Plus.",
                   style="Muted.TLabel", wraplength=680).pack(anchor="w", pady=(0, 24))
         cards = ttk.Frame(panel)
@@ -565,7 +613,7 @@ class StompilotApp(ttk.Frame):
         ):
             card = ttk.Frame(cards, style="Panel.TFrame", padding=24)
             card.grid(row=0, column=column, sticky="nsew", padx=(0, 14) if column == 0 else 0)
-            ttk.Label(card, text=title, background=PANEL, font=("Segoe UI", 12, "bold")).pack(anchor="w")
+            ttk.Label(card, text=title, background=PANEL, font=self.zoom.font("section")).pack(anchor="w")
             ttk.Label(card, text=detail, background=PANEL, foreground=MUTED,
                       wraplength=300).pack(anchor="w", pady=(12, 24))
             ttk.Button(card, text=button, style="Accent.TButton", command=command).pack(fill="x")
@@ -691,18 +739,12 @@ class StompilotApp(ttk.Frame):
                 help_text += " Multiple consecutive SysEx messages: needs testing on the Chocolate."
             self.guidance.set(help_text)
             self.copy_button.configure(state="normal" if self.output else "disabled")
-            if result.warnings:
-                self.details_button.configure(state="normal")
-                self.details_button.pack(side="right", padx=(0, 8))
-            else:
-                self.details_button.pack_forget()
             self.status.set(f"{len(self.profiles)} profiles · {len(self.project['pages'])} pages · {len(self.selected_state()['actions'])} actions in the selected state")
         except (ValueError, KeyError, StopIteration) as exc:
             self.current_compiled, self.output = None, ""
             self.output_title.set("Configuration needs correction")
             self.guidance.set(str(exc))
             self.copy_button.configure(state="disabled")
-            self.details_button.pack_forget()
             self.status.set("Correct the actions before exporting.")
         self.hex_text.configure(state="normal")
         self.hex_text.delete("1.0", "end")
@@ -799,8 +841,7 @@ class StompilotApp(ttk.Frame):
         self.refresh()
 
     def rename_page(self):
-        from tkinter.simpledialog import askstring
-        value = askstring("Page name", "Page name:", initialvalue=self.project["pages"][self.page_index]["name"], parent=self.root)
+        value = messagebox.askstring("Page name", "Page name:", initialvalue=self.project["pages"][self.page_index]["name"], parent=self.root)
         if value and value.strip():
             self.project["pages"][self.page_index]["name"] = value.strip()
             self.mark_dirty()
@@ -821,10 +862,6 @@ class StompilotApp(ttk.Frame):
             self.root.clipboard_clear()
             self.root.clipboard_append(self.output)
             self.status.set("Messages copied. Paste them into the specified bank in MidiSuite.")
-
-    def show_notes(self):
-        if self.current_compiled and self.current_compiled.warnings:
-            messagebox.showinfo("Setup notes", "\n\n".join(self.current_compiled.warnings), parent=self.root)
 
     def save_project(self):
         if self.startup_frame is not None:
@@ -918,7 +955,10 @@ class StompilotApp(ttk.Frame):
         window.configure(bg=BG)
         window.geometry("760x590")
         window.transient(self.root)
-        frame = ttk.Frame(window, padding=22)
+        self.zoom.toolbar(window).pack(fill="x", padx=22, pady=(10, 0))
+        profile_scroll = ScrollableFrame(window, horizontal=True)
+        profile_scroll.pack(fill="both", expand=True)
+        frame = ttk.Frame(profile_scroll.content, padding=22)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="Device profiles", style="Section.TLabel").pack(anchor="w")
         ttk.Label(frame, text="Browse device information, import new JSON profiles, or export a profile to create a variant.",
@@ -926,7 +966,7 @@ class StompilotApp(ttk.Frame):
         selected = tk.StringVar(value=next(iter(self.profiles.values()))["name"])
         box = ttk.Combobox(frame, textvariable=selected, state="readonly", values=[p["name"] for p in self.profiles.values()])
         box.pack(fill="x", pady=(0, 12))
-        text = tk.Text(frame, bg=PANEL, fg=FG, wrap="word", relief="flat", padx=14, pady=12, font=("Segoe UI", 10))
+        text = tk.Text(frame, bg=PANEL, fg=FG, wrap="word", relief="flat", padx=14, pady=12, font=self.zoom.font("body"))
         text.pack(fill="both", expand=True)
         def display(event=None):
             profile = next(p for p in self.profiles.values() if p["name"] == selected.get())
@@ -982,6 +1022,8 @@ class StompilotApp(ttk.Frame):
         ttk.Button(buttons, text="Import JSON profile", style="Accent.TButton", command=import_profile).pack(side="left")
         ttk.Button(buttons, text="Export profile", command=export_profile).pack(side="left", padx=8)
         ttk.Button(buttons, text="Close", command=window.destroy).pack(side="right")
+        self.zoom.listen(window, lambda percent: window.geometry(
+            f"{min(self.zoom.px(760), window.winfo_screenwidth() - 60)}x{min(self.zoom.px(670), window.winfo_screenheight() - 100)}"))
 
     def configure_controller(self):
         if self.controller_dialog is not None and self.controller_dialog.winfo_exists():
@@ -1020,6 +1062,8 @@ def main():
                           "boost_on_hex": boost.sysex_hex}, indent=2))
         return
     root = tk.Tk()
+    if args.smoke_test or args.screenshot:
+        ZoomManager(root, persist=False)
     if args.smoke_test:
         root.withdraw()
     app = StompilotApp(root, project if args.smoke_test else None, start_screen=not args.smoke_test)
@@ -1042,6 +1086,18 @@ def main():
         root.update()
         assert dialog.get_action()["value"] == 10
         assert dialog.get_action()["param_id"] == "mix"
+        unchanged_project = json.dumps(app.project, sort_keys=True)
+        unchanged_action = dialog.get_action()
+        unchanged_output = app.output
+        app.zoom.set_percent(200)
+        root.update_idletasks()
+        assert dialog.zoom is app.zoom
+        assert dialog.get_action() == unchanged_action
+        assert json.dumps(app.project, sort_keys=True) == unchanged_project
+        assert app.output == unchanged_output
+        assert app.zoom.font("title").cget("size") == 42
+        assert app.zoom.font("body").cget("size") == 20
+        app.zoom.reset()
         dialog.destroy()
         reload_action = {"device_id": "tank_mini_v09", "type": "reload_current_preset"}
         dialog = ActionDialog(root, profiles, reload_action)
@@ -1075,6 +1131,11 @@ def main():
         assert plan_project(app.project, profiles, bytes(image)).changed_bytes == 0
         dialog = RawMidiDialog(root, profiles, app.selected_state()["actions"][0])
         assert dialog.get_action()["message_hex"] == "B0 02 00"
+        app.zoom.set_percent(150)
+        root.update_idletasks()
+        assert dialog.zoom is app.zoom and dialog.get_action()["message_hex"] == "B0 02 00"
+        assert app.zoom.font("mono").cget("size") == 15
+        app.zoom.reset()
         dialog.value.set("10")
         assert dialog.get_action()["message_hex"] == "B0 02 0A"
         dialog.destroy()
@@ -1085,7 +1146,7 @@ def main():
             assert BACKUP_DIR.parent == Path(sys.executable).resolve().parent
             assert PROFILE_DIR.parent == Path(sys.executable).resolve().parent
         root.destroy()
-        print("GUI smoke test OK: startup, source banner, controller import, raw MIDI editing, states, pages, export, reload action.")
+        print("GUI smoke test OK: global zoom, startup, source banner, controller import, raw MIDI editing, states, pages, export, reload action.")
         return
     if args.screenshot:
         from PIL import ImageGrab

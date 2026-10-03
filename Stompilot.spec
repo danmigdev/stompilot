@@ -17,6 +17,7 @@ analysis = Analysis(
     hiddenimports=[
         "mido.backends.rtmidi", "rtmidi", "rtmidi._rtmidi",
         "core", "chocolate", "chocolate_transport", "controller_ui", "runtime_paths",
+        "ui_scale", "ui_dialogs",
     ],
     hookspath=[],
     hooksconfig={},
