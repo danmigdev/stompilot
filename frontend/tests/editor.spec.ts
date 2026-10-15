@@ -12,7 +12,7 @@ const python=resolve(repository,'.venv/Scripts/python.exe');
 function compile(project:Project,profiles=[tankProfile]) {
   return JSON.parse(execFileSync(python,['-c',"import sys,json; from midi_configurator.core import compile_config; data=json.load(sys.stdin); print(json.dumps(compile_config(data['project'],{p['id']:p for p in data['profiles']})))"],{cwd:repository,input:JSON.stringify({project,profiles}),encoding:'utf8'}));
 }
-function emptyProject():Project{return {schema_version:1,name:'New project',controller:{id:'chocolate_plus',max_sysex_bytes:128},pages:[{name:'Page 1',switches:Object.fromEntries('ABCD'.split('').map(id=>[id,{label:`Switch ${id}`,mode:'single',states:[{label:'Sequence',actions:[]}]}]))}]};}
+function emptyProject():Project{return {schema_version:1,name:'New project',controller:{id:'chocolate_plus',max_sysex_bytes:127},pages:[{name:'Page 1',switches:Object.fromEntries('ABCD'.split('').map(id=>[id,{label:`Switch ${id}`,mode:'single',states:[{label:'Sequence',actions:[]}]}]))}]};}
 async function fixture(page:Page,initial:Project|null=null,profiles=[tankProfile],slowReadFailure=false) {
   let snapshot:Snapshot={profiles,project:initial,compiled:initial?compile(initial,profiles):null,dirty:false,origin:initial?'Explicit browser test fixture':'No project',file_name:null,zoom_percent:100,controller:{devices:[],connected:false,busy:false,identity:null,summary:'',preview:null,status:'Explicit read-only test fixture',can_import:false,can_write:false}};
   const calls:string[]=[];

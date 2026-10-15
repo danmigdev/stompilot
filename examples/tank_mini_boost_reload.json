@@ -3,7 +3,7 @@
   "name": "Tremolo and Boost with preset reload",
   "controller": {
     "id": "chocolate_plus",
-    "max_sysex_bytes": 128
+    "max_sysex_bytes": 127
   },
   "pages": [
     {

@@ -181,21 +181,28 @@ Use the **Copy MIDI bytes** icon beside **Hex bytes** for the selected state, or
 **Export MIDI** for a text summary of all assignments. **CC rows** displays
 channel, controller number, and value. In MidiSuite, choose the switch, mode, and Bank
 A/B. Paste all SysEx lines into the same **SysEx (hex)** field, or add one CC row
-per command, then save the controller configuration there. The exported text is
+per command, then save the controller configuration there. Keep every `F0` and
+`F7`: the controller sends the field's bytes exactly as stored and does not add
+`F0`, although MidiSuite's example hint leaves it out. The exported text is
 a human-readable summary, not a native MidiSuite import file.
 
 ## Supported scope and verification
 
 - Chocolate Plus USB programming targets firmware 16 (`FootCtrlPlus_016`): up to
-  8 pages, 16 CC rows per bank, and 128 SysEx bytes per bank. Bluetooth
+  8 pages, 16 CC rows per bank, and 127 SysEx bytes per bank. Bluetooth
   configuration is not implemented.
-- A bank uses CC or SysEx. Multiple complete SysEx frames are concatenated within
-  that bank's 128-byte limit; physical forwarding of consecutive frames still
-  needs verification.
-- USB discovery, identity, and configuration reading have been verified on a
-  connected firmware 16 controller. The tested one-page configuration produced
-  a zero-change write preview after import. Physical writing remains unverified;
-  write, backup, and readback behavior is checked with simulated controllers.
+- A bank uses CC or SysEx. Its 128-byte SysEx area starts with a length byte,
+  followed by complete SysEx frames, concatenated, which the controller sends
+  exactly as stored. Over USB, a `FootCtrlPlus_013` sent three consecutive TANK
+  frames from one bank intact; host mode to a TANK on the HOST port still needs
+  a test.
+- Stompilot v0.3.2 and earlier stored SysEx without the length byte, so the
+  controller sent nothing for those banks. Reading such a controller lists the
+  affected banks; **Import as project**, **Preview changes**, and **Write to
+  controller** rewrite them in the correct format.
+- USB discovery, identity, configuration reading, and writing with full readback
+  have been used on physical controllers. Write, backup, and readback failure
+  handling is checked with simulated controllers.
 - The TANK profile comes from stock V09 firmware analysis. MOD SysEx has been
   tested on the device; the solo parameter sequence and preset reload still
   need a complete physical test. Parameter display-unit conversions are not
@@ -253,8 +260,8 @@ The release contains `Stompilot.exe`, `tank_mini_live_boost.json`, and
 After committing and pushing the changes to release:
 
 ```powershell
-git tag -a v0.3.3 -m "Stompilot v0.3.3"
-git push origin v0.3.3
+git tag -a v0.3.4 -m "Stompilot v0.3.4"
+git push origin v0.3.4
 ```
 
 Use a new `vMAJOR.MINOR.PATCH` tag for each release. A suffix such as

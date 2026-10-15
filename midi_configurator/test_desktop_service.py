@@ -13,10 +13,10 @@ import unittest
 from unittest.mock import patch
 
 from . import desktop_service
-from .chocolate import BANK_A_ROWS, CONFIG_SIZE, plan_project, switch_offset
+from .chocolate import BANK_A_ROWS, CONFIG_SIZE, legacy_sysex_banks, plan_project, switch_offset
 from .core import compile_config
 from .project import new_project
-from .test_chocolate import readable_fixture
+from .test_chocolate import legacy_fixture, readable_fixture
 from .test_core import cc_fixture, config_fixture, tank_fixture
 
 
@@ -223,7 +223,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(state["origin"], "Saved project · loaded.json")
         self.assertEqual(state["project"]["notes"], source["notes"])
         self.assertIn("D", state["project"]["pages"][0]["switches"])
-        self.assertEqual(state["project"]["controller"]["max_sysex_bytes"], 128)
+        self.assertEqual(state["project"]["controller"]["max_sysex_bytes"], 127)
         state["project"]["name"] = "Changed"
         self.request("set_project", {"project": state["project"]})
         saved = self.request("save_project")
@@ -352,6 +352,31 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(plan_project(reopened["project"], self.profiles, self.image).image, self.image)
         self.assertFalse(any(isinstance(call, tuple) and call[0] == "write" for call in self.usb_calls))
         self.assertFalse((self.directory / ".backups").exists())
+
+    def test_read_flags_old_stompilot_sysex_and_import_preview_write_repairs_it(self):
+        self.image = legacy_fixture()
+        state = self.read()
+        status = state["controller"]["status"]
+        self.assertIn("3 SysEx bank(s) were written by an earlier Stompilot", status)
+        self.assertIn("Page 1, switch A, bank B", status)
+        self.assertIn("Import as project, then preview and write", status)
+        self.assertIn("old Stompilot format", state["controller"]["summary"])
+        self.request("controller_import")
+        preview = self.request("controller_preview")["controller"]["preview"]
+        self.assertEqual(sum("old Stompilot format" in line for line in preview["summaries"]), 3)
+        self.assertGreater(preview["changed_bytes"], 0)
+        result = self.request("controller_write")
+        self.assertIn("readback verified", result["controller"]["status"])
+        self.assertEqual(legacy_sysex_banks(self.transport.image), [])
+        self.assertNotIn("earlier Stompilot", result["controller"]["summary"])
+
+    def test_old_sysex_on_unsupported_firmware_is_reported_without_a_repair_path(self):
+        self.identity = SimpleNamespace(name="FootCtrlPlus_013", firmware_version=13)
+        self.image = legacy_fixture()
+        status = self.read()["controller"]["status"]
+        self.assertIn("written by an earlier Stompilot", status)
+        self.assertNotIn("Import as project", status)
+        self.assertIn("firmware 13", status)
 
     def test_unsupported_firmware_is_inspect_only(self):
         self.identity = SimpleNamespace(name="FootCtrlPlus_015", firmware_version=15)

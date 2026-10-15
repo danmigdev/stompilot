@@ -39,6 +39,11 @@ on its included pages, with both banks when the switch alternates. It activates
 Advanced Custom mode, sets the active page count to the project's page count,
 and selects the first page.
 
+Each SysEx bank is written as a length byte followed by complete `F0`…`F7`
+messages, up to 127 bytes. A bank written by Stompilot v0.3.2 or earlier, which
+lacks the length byte, is rewritten even when its messages are unchanged; the
+preview marks these banks.
+
 Data for unused Advanced Custom pages and the Keyboard and Mixed mode banks is
 preserved. An included empty bank clears its active assignments. Single mode
 retains inactive Bank B. Replacing an Advanced switch that uses press/release

@@ -13,14 +13,14 @@ from tkinter import ttk, filedialog
 
 if __package__:
     from .core import (ValidationError, load_profiles, validate_profile, compile_action,
-                       compile_state, validate_config, load_config, save_config)
+                       compile_state, validate_config, load_config, save_config, sysex_limit)
     from .project import new_project, empty_page, normalize_project
     from .runtime_paths import resource_dir, profile_directory
     from .ui_scale import ZoomManager, ScrollableFrame, get_zoom
     from . import ui_dialogs as messagebox
 else:
     from core import (ValidationError, load_profiles, validate_profile, compile_action,
-                      compile_state, validate_config, load_config, save_config)
+                      compile_state, validate_config, load_config, save_config, sysex_limit)
     from project import new_project, empty_page, normalize_project
     from runtime_paths import resource_dir, profile_directory
     from ui_scale import ZoomManager, ScrollableFrame, get_zoom
@@ -704,13 +704,14 @@ class StompilotApp(ttk.Frame):
 
     def refresh_output(self):
         try:
-            result = compile_state(self.selected_state(), self.profiles, self.project["controller"].get("max_sysex_bytes", 128))
+            limit = sysex_limit(self.project)
+            result = compile_state(self.selected_state(), self.profiles, limit)
             self.current_compiled = result
             bank = "A" if self.state_index == 0 else "B"
             mode_name = "Single step (switch 2 banks)" if self.selected_switch()["mode"] == "alternating" else "Single step (single bank)"
             if result.sysex_hex:
                 self.output = result.sysex_hex
-                self.output_title.set(f"Bank {bank} · SysEx · {result.byte_count}/128 bytes")
+                self.output_title.set(f"Bank {bank} · SysEx · {result.byte_count}/{limit} bytes")
                 help_text = f"MidiSuite: switch {self.switch_letter} → {mode_name} → Bank {bank} → SysEx (hex). Paste all content into one field."
             elif result.cc_rows:
                 self.output = "\n".join(f"Channel {r['channel']} · Type CC · Data 1 {r['data1']} · Data 2 {r['data2']}" for r in result.cc_rows)
@@ -926,7 +927,7 @@ class StompilotApp(ttk.Frame):
                 mode_name = "Single step (switch 2 banks)" if switch["mode"] == "alternating" else "Single step (single bank)"
                 lines.append(f"\nSWITCH {letter} · {switch['label']} · {mode_name}")
                 for index, state in enumerate(switch["states"]):
-                    result = compile_state(state, self.profiles, self.project["controller"].get("max_sysex_bytes", 128))
+                    result = compile_state(state, self.profiles, sysex_limit(self.project))
                     lines.append(f"\nBank {'A' if index == 0 else 'B'}: {state['label']}")
                     lines.extend(result.summaries)
                     if result.sysex_hex:
@@ -1110,7 +1111,7 @@ def main():
             {"name": "Page 1", "switches": {"A": {"mode": "single", "states": [{}]}}}]}
         app._replace_project(minimal)
         assert set(app.project["pages"][0]["switches"]) == set("ABCD")
-        assert app.project["controller"]["max_sysex_bytes"] == 128
+        assert app.project["controller"]["max_sysex_bytes"] == 127
         assert app.state_name.get() == "State 1" and app.output == ""
         assert "SWITCH D" in app.export_text()
         app.show_startup()

@@ -3,6 +3,12 @@
 The 23,646-byte layout is derived from MidiSuite's FcpModel and confirmed
 against a complete read of a FootCtrlPlus_016. Always edit a fresh device
 image so settings that Stompilot does not expose remain intact.
+
+Each bank's 128-byte SysEx area holds a length byte n, then n bytes that the
+firmware sends exactly as stored, so they must be complete F0...F7 messages.
+The firmware does not add F0. Earlier Stompilot releases stored the messages
+from byte 0; F0 is never a valid length, so the firmware sent nothing for
+those banks. They are still decoded so that a write can repair them.
 """
 from __future__ import annotations
 
@@ -23,6 +29,8 @@ SWITCH_SIZE = 417
 MIDI_ROWS = 16
 ROW_SIZE = 5
 SYSEX_SIZE = 128
+SYSEX_LIMIT = SYSEX_SIZE - 1
+SYSEX_ROW = b"\x01\x00\x04\x00\x00"
 BANK_A_ROWS = 1
 BANK_B_ROWS = 81
 BANK_A_SYSEX = 161
@@ -95,16 +103,51 @@ def _bank_summary(block: bytes, row_offset: int, sysex_offset: int) -> str:
     if not enabled:
         return "empty"
     if any(row[2] == 4 for row in enabled):
-        data = block[sysex_offset:sysex_offset + SYSEX_SIZE]
-        end = data.rfind(b"\xf7")
-        if end < 0:
+        sysex = block[sysex_offset:sysex_offset + SYSEX_SIZE]
+        if _legacy_sysex(sysex):
+            return "SysEx in the old Stompilot format; the controller sends nothing"
+        length = sysex[0]
+        if length > SYSEX_LIMIT:
+            return f"SysEx (invalid length byte {length})"
+        try:
+            messages = _sysex_frames(sysex[1:1 + length], "SysEx")
+        except ValidationError:
+            return f"SysEx, {length} bytes, not complete F0...F7 messages"
+        if not messages:
             return "SysEx (no complete message)"
-        return f"SysEx, {end + 1} bytes, {data[:end + 1].count(bytes([0xF0]))} message(s)"
+        return f"SysEx, {length} bytes, {len(messages)} message(s)"
     cc_count = sum(row[2] == 1 for row in enabled)
     if cc_count == len(enabled):
         values = "; ".join(f"ch {row[1] + 1} CC {row[3]} = {row[4]}" for row in enabled)
         return f"{cc_count} CC row(s): {values}"
     return f"{len(enabled)} MIDI row(s)"
+
+
+def _legacy_sysex(sysex: bytes) -> bool:
+    """Byte 0 is F0: the messages start where the firmware expects the length."""
+    return sysex[0] == 0xF0
+
+
+def _legacy_bank(rows: bytes, sysex: bytes) -> bool:
+    sysex_enabled = any(rows[index * ROW_SIZE] and rows[index * ROW_SIZE + 2] == 4
+                        for index in range(MIDI_ROWS))
+    return sysex_enabled and _legacy_sysex(sysex)
+
+
+def legacy_sysex_banks(image: bytes) -> list[str]:
+    """Name the active banks that an earlier Stompilot stored in the old format."""
+    image = _image(image)
+    result = []
+    for page_index in range(min(image[PAGE_COUNT_OFFSET] + 1, MAX_DEVICE_PAGES)):
+        for switch_id in SWITCHES:
+            offset = switch_offset(page_index, switch_id)
+            block = image[offset:offset + SWITCH_SIZE]
+            banks = ("A", "B") if block[0] in (1, 2, 4) else ("A",)
+            for bank in banks:
+                rows, sysex = (BANK_A_ROWS, BANK_A_SYSEX) if bank == "A" else (BANK_B_ROWS, BANK_B_SYSEX)
+                if _legacy_bank(block[rows:rows + MIDI_ROWS * ROW_SIZE], block[sysex:sysex + SYSEX_SIZE]):
+                    result.append(f"Page {page_index + 1}, switch {switch_id}, bank {bank}")
+    return result
 
 
 def decode_config(image: bytes) -> dict:
@@ -140,6 +183,11 @@ def config_summary(image: bytes) -> str:
             if switch["step_mode"] in (1, 2, 4):
                 banks += f"; B: {switch['bank_b']}"
             lines.append(f"  {switch_id}: {switch['mode']}; {banks}")
+    legacy = legacy_sysex_banks(image)
+    if legacy:
+        lines.extend(["", f"{len(legacy)} SysEx bank(s) were written by an earlier Stompilot with F0 "
+                      "where the controller expects the length byte, so the controller sends nothing "
+                      "for them until they are rewritten: " + "; ".join(legacy) + "."])
     return "\n".join(lines)
 
 
@@ -168,23 +216,36 @@ def _decode_bank(rows: bytes, sysex: bytes, path: str) -> tuple[bytes, ...]:
         return tuple(bytes([0xB0 + row[1], row[3], row[4]]) for row in enabled)
     if markers != 1 or len(enabled) != 1:
         raise ValidationError(f"{path}: a SysEx bank must have exactly one enabled SysEx row and no other enabled MIDI rows")
-    messages = []
-    position = 0
-    while position < SYSEX_SIZE:
-        if sysex[position] == 0 and not any(sysex[position:]):
-            break
-        if sysex[position] != 0xF0:
-            raise ValidationError(f"{path}: SysEx byte {position + 1} is not the start of a complete F0...F7 message; only zero padding may follow messages")
-        end = sysex.find(b"\xf7", position + 1)
-        if end < 0:
-            raise ValidationError(f"{path}: SysEx message at byte {position + 1} has no F7 terminator")
-        message = sysex[position:end + 1]
-        if any(byte > 127 for byte in message[1:-1]):
-            raise ValidationError(f"{path}: SysEx message at byte {position + 1} contains invalid 7-bit data")
-        messages.append(message)
-        position = end + 1
+    if _legacy_sysex(sysex):
+        # The old format stored the messages from byte 0, followed by zero padding.
+        data = sysex.rstrip(b"\x00")
+    else:
+        if sysex[0] > SYSEX_LIMIT:
+            raise ValidationError(f"{path}: SysEx length byte {sysex[0]} exceeds the {SYSEX_LIMIT}-byte limit")
+        data = sysex[1:1 + sysex[0]]
+        if data and data[0] != 0xF0:
+            raise ValidationError(f"{path}: SysEx data starts with {data[0]:02X}, not F0. The controller sends the stored bytes unchanged and does not add F0, so each message must include its own F0 and F7")
+    messages = _sysex_frames(data, path)
     if not messages:
         raise ValidationError(f"{path}: the enabled SysEx row has no complete message")
+    return messages
+
+
+def _sysex_frames(data: bytes, path: str) -> tuple[bytes, ...]:
+    """Split the bytes a bank sends into complete F0...F7 messages."""
+    messages = []
+    position = 0
+    while position < len(data):
+        if data[position] != 0xF0:
+            raise ValidationError(f"{path}: SysEx data byte {position + 1} is not the start of a complete F0...F7 message")
+        end = data.find(b"\xf7", position + 1)
+        if end < 0:
+            raise ValidationError(f"{path}: SysEx message at data byte {position + 1} has no F7 terminator")
+        message = data[position:end + 1]
+        if any(byte > 127 for byte in message[1:-1]):
+            raise ValidationError(f"{path}: SysEx message at data byte {position + 1} contains invalid 7-bit data")
+        messages.append(message)
+        position = end + 1
     return tuple(messages)
 
 
@@ -248,7 +309,7 @@ def import_controller_project(image: bytes, profiles: Mapping[str, dict]) -> dic
                                    "mode": STEP_MODES[step_mode], "states": states}
         pages.append({"name": f"Page {page_index + 1}", "switches": switches})
     project = {"schema_version": 1, "name": "Chocolate Plus configuration",
-               "controller": {"id": "chocolate_plus", "max_sysex_bytes": SYSEX_SIZE},
+               "controller": {"id": "chocolate_plus", "max_sysex_bytes": SYSEX_LIMIT},
                "pages": pages}
     return validate_config(project, profiles)
 
@@ -258,7 +319,8 @@ def _encode_bank(state: dict, path: str, source_state: dict) -> tuple[bytes, byt
         native_rows, native_sysex = _native_bank(source_state["native_bank"], path)
         native_messages = _decode_bank(native_rows, native_sysex, path)
         messages = tuple(bytes.fromhex(message) for message in state["messages_hex"])
-        if messages == native_messages:
+        # An unchanged bank in the old format is still re-encoded, which repairs it.
+        if messages == native_messages and not _legacy_bank(native_rows, native_sysex):
             return native_rows, native_sysex
     rows = bytearray(MIDI_ROWS * ROW_SIZE)
     sysex = bytearray(SYSEX_SIZE)
@@ -271,10 +333,11 @@ def _encode_bank(state: dict, path: str, source_state: dict) -> tuple[bytes, byt
             rows[start:start + ROW_SIZE] = bytes([1, row["channel"] - 1, 1, row["data1"], row["data2"]])
     elif state["messages_hex"]:
         data = b"".join(bytes.fromhex(message) for message in state["messages_hex"])
-        if len(data) > SYSEX_SIZE:
-            raise ValidationError(f"{path}: Chocolate Plus SysEx bank exceeds {SYSEX_SIZE} bytes")
-        rows[:ROW_SIZE] = b"\x01\x00\x04\x00\x00"
-        sysex[:len(data)] = data
+        if len(data) > SYSEX_LIMIT:
+            raise ValidationError(f"{path}: Chocolate Plus SysEx bank exceeds {SYSEX_LIMIT} bytes")
+        rows[:ROW_SIZE] = SYSEX_ROW
+        sysex[0] = len(data)
+        sysex[1:1 + len(data)] = data
     return bytes(rows), bytes(sysex)
 
 
@@ -314,6 +377,8 @@ def plan_project(project: dict, profiles: Mapping[str, dict], original_image: by
                 rows, sysex = _encode_bank(state, f"{path}, bank {'AB'[state_index]}", source_state)
                 row_offset = BANK_A_ROWS if state_index == 0 else BANK_B_ROWS
                 sysex_offset = BANK_A_SYSEX if state_index == 0 else BANK_B_SYSEX
+                repaired = _legacy_bank(original[offset + row_offset:offset + row_offset + len(rows)],
+                                        original[offset + sysex_offset:offset + sysex_offset + len(sysex)])
                 result[offset + row_offset:offset + row_offset + len(rows)] = rows
                 result[offset + sysex_offset:offset + sysex_offset + len(sysex)] = sysex
                 warnings.extend(state["warnings"])
@@ -326,6 +391,8 @@ def plan_project(project: dict, profiles: Mapping[str, dict], original_image: by
                 line = f"  Bank {'AB'[state_index]} ({state['label']}): {details}"
                 if assignments:
                     line += f"; {assignments}"
+                if repaired:
+                    line += "; replaces SysEx in the old Stompilot format, which the controller does not send"
                 summaries.append(line)
     result[0] = ADVANCED_MODE
     result[PAGE_COUNT_OFFSET] = len(pages) - 1

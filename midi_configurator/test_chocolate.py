@@ -7,8 +7,8 @@ import unittest
 from .chocolate import (
     ADVANCED_MODE, ADVANCED_OFFSET, BANK_A_ROWS, BANK_A_SYSEX, BANK_B_ROWS,
     BANK_B_SYSEX, CONFIG_SIZE, CURRENT_PAGE_OFFSET, PAGE_COUNT_OFFSET,
-    SWITCH_SIZE, changed_ranges, config_summary, decode_config, plan_project,
-    import_controller_project, switch_offset,
+    SWITCH_SIZE, SYSEX_ROW, changed_ranges, config_summary, decode_config,
+    import_controller_project, legacy_sysex_banks, plan_project, switch_offset,
 )
 from .core import ValidationError, compile_config, load_config, load_profiles, save_config
 from .project import new_project
@@ -16,6 +16,18 @@ from .test_core import (
     FX_OFF, FX_ON, REV_MIX_10, REV_MIX_5, cc_fixture, config_fixture,
     enabled, tank_fixture,
 )
+
+
+def stored(message_hex):
+    """A SysEx area as the controller reads it: length byte, sent bytes, zero padding."""
+    data = bytes.fromhex(message_hex)
+    return bytes([len(data)]) + data + bytes(127 - len(data))
+
+
+def legacy_stored(message_hex):
+    """A SysEx area as earlier Stompilot releases wrote it, starting with F0."""
+    data = bytes.fromhex(message_hex)
+    return data + bytes(128 - len(data))
 
 
 def original_fixture():
@@ -55,6 +67,21 @@ def readable_fixture(page_count=1):
     return bytes(image)
 
 
+def legacy_fixture():
+    """Alternating A and single B, written in the old format that the controller never sent."""
+    image = bytearray(readable_fixture())
+    a, b = switch_offset(0, "A"), switch_offset(0, "B")
+    image[a] = 1
+    for offset, rows, sysex, vector in [
+        (a, BANK_A_ROWS, BANK_A_SYSEX, FX_ON),
+        (a, BANK_B_ROWS, BANK_B_SYSEX, FX_OFF),
+        (b, BANK_A_ROWS, BANK_A_SYSEX, FX_ON + " " + REV_MIX_10),
+    ]:
+        image[offset + rows:offset + rows + 80] = SYSEX_ROW + bytes(75)
+        image[offset + sysex:offset + sysex + 128] = legacy_stored(vector)
+    return bytes(image)
+
+
 class ChocolateCodecTests(unittest.TestCase):
     def setUp(self):
         self.profiles = {"tank": tank_fixture(), "generic": cc_fixture()}
@@ -82,7 +109,8 @@ class ChocolateCodecTests(unittest.TestCase):
             data = bytes.fromhex(vector)
             self.assertEqual(len(data), 43)
             self.assertEqual(block[rows_offset:rows_offset + 80], b"\x01\x00\x04\x00\x00" + bytes(75))
-            self.assertEqual(block[sysex_offset:sysex_offset + 128], data + bytes(128 - len(data)))
+            self.assertEqual(block[sysex_offset:sysex_offset + 128], stored(vector))
+            self.assertEqual(block[sysex_offset], 43)
         self.assertTrue(any("consecutive" in warning for warning in plan.warnings))
         self.assertTrue(any("switch B" in summary for summary in plan.summaries))
         self.assertTrue(any("ON / Mix 10" in summary and "43 SysEx bytes" in summary and "Mix = 10" in summary for summary in plan.summaries))
@@ -104,13 +132,13 @@ class ChocolateCodecTests(unittest.TestCase):
         self.assertEqual(plan.image[start + BANK_B_ROWS:start + BANK_B_ROWS + 80],
                          b"\x01\x00\x04\x00\x00" + bytes(75))
         self.assertEqual(plan.image[start + BANK_B_SYSEX:start + BANK_B_SYSEX + 128],
-                         reload_frame + bytes(107))
+                         bytes([21]) + reload_frame + bytes(106))
         boost_and_mix = bytes.fromhex(FX_ON + " " + REV_MIX_10)
         self.assertEqual(len(boost_and_mix), 43)
         self.assertEqual(plan.image[start + BANK_A_ROWS:start + BANK_A_ROWS + 80],
                          b"\x01\x00\x04\x00\x00" + bytes(75))
         self.assertEqual(plan.image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128],
-                         boost_and_mix + bytes(85))
+                         bytes([43]) + boost_and_mix + bytes(84))
         bank_b_offsets = set(range(start + BANK_B_ROWS, start + BANK_B_ROWS + 80))
         bank_b_offsets.update(range(start + BANK_B_SYSEX, start + BANK_B_SYSEX + 128))
         changed = {index for index, (old, new) in enumerate(zip(previous.image, plan.image))
@@ -124,6 +152,33 @@ class ChocolateCodecTests(unittest.TestCase):
                             "temporary edits" in warning.lower() for warning in plan.warnings))
         self.assertTrue(any("Reload current preset" in summary and "21 SysEx bytes" in summary
                             for summary in plan.summaries))
+
+    def test_sysex_bank_matches_the_layout_verified_on_the_controller(self):
+        # FootCtrlPlus_013, 2026-10-15: with this Bank A, button A sends a valid MOD-on frame.
+        verified = bytes.fromhex("15 F0 00 32 09 49 00 00 00 02 0A 00 00 00 11 00 00 00 01 3E 03 F7") + bytes(106)
+        profiles = load_profiles(Path(__file__).with_name("profiles"))
+        plan = plan_project(new_project(), profiles, self.original)
+        start = switch_offset(0, "A")
+        self.assertEqual(plan.image[start + BANK_A_ROWS:start + BANK_A_ROWS + 80],
+                         b"\x01\x00\x04\x00\x00" + bytes(75))
+        self.assertEqual(plan.image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128], verified)
+        self.assertEqual(decode_config(plan.image)["pages"][0]["switches"]["A"]["bank_a"],
+                         "SysEx, 21 bytes, 1 message(s)")
+
+    def test_largest_bank_is_127_bytes_after_the_length_byte(self):
+        project = deepcopy(self.project)
+        largest = (b"\xF0" + bytes(125) + b"\xF7").hex(" ")
+        project["pages"][0]["switches"] = {"D": {"mode": "single", "states": [
+            {"actions": [{"type": "raw_midi", "message_hex": largest}]}]}}
+        plan = plan_project(project, self.profiles, self.original)
+        start = switch_offset(0, "D")
+        self.assertEqual(plan.image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128], stored(largest))
+        self.assertEqual(plan.image[start + BANK_A_SYSEX], 127)
+        project["pages"][0]["switches"]["D"]["states"][0]["actions"] = [
+            {"type": "raw_midi", "message_hex": (b"\xF0" + bytes(61) + b"\xF7").hex(" ")},
+            {"type": "raw_midi", "message_hex": (b"\xF0" + bytes(63) + b"\xF7").hex(" ")}]
+        with self.assertRaisesRegex(ValidationError, "128 SysEx bytes; the limit is 127"):
+            plan_project(project, self.profiles, self.original)
 
     def test_preserves_every_byte_outside_selected_banks_and_three_globals(self):
         self.project["pages"][0]["switches"] = {"B": self.project["pages"][0]["switches"]["B"]}
@@ -187,7 +242,7 @@ class ChocolateCodecTests(unittest.TestCase):
     def test_oversized_sysex_rejected_before_image_is_modified(self):
         state = self.project["pages"][0]["switches"]["A"]["states"][0]
         state["actions"] = [enabled(True)] * 7
-        with self.assertRaisesRegex(ValidationError, "limit is 128"):
+        with self.assertRaisesRegex(ValidationError, "limit is 127"):
             plan_project(self.project, self.profiles, self.original)
 
     def test_bad_length_and_unknown_global_or_selected_step_mode_rejected(self):
@@ -285,8 +340,7 @@ class ChocolateImportTests(unittest.TestCase):
             rows = bytearray(b"\x00\xFE\xFD\xFC\xFB" * 16)
             rows[row_index * 5:row_index * 5 + 5] = b"\x01\x03\x04\xFE\xFF"
             image[start + rows_offset:start + rows_offset + 80] = rows
-            data = bytes.fromhex(vector)
-            image[start + sysex_offset:start + sysex_offset + 128] = data + bytes(128 - len(data))
+            image[start + sysex_offset:start + sysex_offset + 128] = stored(vector)
         project = import_controller_project(image, {"tank": tank_fixture()})
         switch = project["pages"][0]["switches"]["B"]
         self.assertEqual(switch["mode"], "alternating")
@@ -347,32 +401,91 @@ class ChocolateImportTests(unittest.TestCase):
             with self.subTest(row=row), self.assertRaisesRegex(ValidationError, reason):
                 import_controller_project(image, {})
 
-    def test_sysex_requires_one_marker_complete_frames_and_zero_padding(self):
-        for rows, data, reason in [
-            (b"\x01\x00\x04\x00\x00" + b"\x01\x00\x01\x00\x00", b"\xF0\x01\xF7", "exactly one"),
-            (b"\x01\x00\x04\x00\x00" * 2, b"\xF0\x01\xF7", "exactly one"),
-            (b"\x01\x00\x04\x00\x00", b"\xF0\x01", "no F7 terminator"),
-            (b"\x01\x00\x04\x00\x00", b"\xF0\x80\xF7", "7-bit data"),
-            (b"\x01\x00\x04\x00\x00", b"\xF0\x01\xF7\x00\x05", "zero padding"),
-            (b"\x01\x00\x04\x00\x00", b"", "no complete message"),
-        ]:
-            image = bytearray(self.image)
-            start = switch_offset(0, "D")
-            image[start + BANK_A_ROWS:start + BANK_A_ROWS + 80] = rows + bytes(80 - len(rows))
-            image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128] = data + bytes(128 - len(data))
-            with self.subTest(reason=reason), self.assertRaisesRegex(ValidationError, reason):
-                import_controller_project(image, {})
-
-    def test_full_128_byte_sysex_bank_imports_without_losing_the_terminator(self):
+    def import_bank_d(self, rows, area):
         image = bytearray(self.image)
         start = switch_offset(0, "D")
-        data = b"\xF0" + bytes(126) + b"\xF7"
-        image[start + BANK_A_ROWS:start + BANK_A_ROWS + 5] = b"\x01\x00\x04\x00\x00"
-        image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128] = data
-        project = import_controller_project(image, {})
+        image[start + BANK_A_ROWS:start + BANK_A_ROWS + 80] = rows + bytes(80 - len(rows))
+        image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128] = area
+        return bytes(image), import_controller_project(bytes(image), {})
+
+    def test_sysex_requires_one_marker_a_valid_length_and_complete_frames(self):
+        for rows, area, reason in [
+            (SYSEX_ROW + b"\x01\x00\x01\x00\x00", stored("F0 01 F7"), "exactly one"),
+            (SYSEX_ROW * 2, stored("F0 01 F7"), "exactly one"),
+            (SYSEX_ROW, stored("F0 01"), "no F7 terminator"),
+            (SYSEX_ROW, stored("F0 80 F7"), "7-bit data"),
+            (SYSEX_ROW, stored("F0 01 F7 00 05"), "data byte 4 is not the start"),
+            (SYSEX_ROW, bytes(128), "no complete message"),
+            (SYSEX_ROW, bytes([200]) + bytes(127), "length byte 200 exceeds the 127-byte limit"),
+            # Typed without F0 in MidiSuite: the controller sends 00 32 09 ... as plain bytes.
+            (SYSEX_ROW, stored(FX_ON[3:]), "starts with 00, not F0"),
+            (SYSEX_ROW, legacy_stored("F0 01"), "no F7 terminator"),
+            (SYSEX_ROW, legacy_stored("F0 01 F7 00 05"), "data byte 4 is not the start"),
+        ]:
+            with self.subTest(reason=reason, area=area[:6].hex(" ")), self.assertRaisesRegex(ValidationError, reason):
+                self.import_bank_d(rows, area)
+
+    def test_bytes_after_the_length_are_not_sent_and_are_not_imported(self):
+        area = bytes.fromhex("03 F0 01 F7 F0 02 F7") + bytes(121)
+        image, project = self.import_bank_d(SYSEX_ROW, area)
+        state = project["pages"][0]["switches"]["D"]["states"][0]
+        self.assertEqual(state["actions"], [{"type": "raw_midi", "message_hex": "F0 01 F7"}])
+        self.assertEqual(plan_project(project, {}, image).image, image)
+
+    def test_full_127_byte_sysex_bank_imports_without_losing_the_terminator(self):
+        data = (b"\xF0" + bytes(125) + b"\xF7").hex(" ")
+        image, project = self.import_bank_d(SYSEX_ROW, stored(data))
         message = project["pages"][0]["switches"]["D"]["states"][0]["actions"][0]["message_hex"]
-        self.assertEqual(bytes.fromhex(message), data)
-        self.assertEqual(plan_project(project, {}, image).image, bytes(image))
+        self.assertEqual(bytes.fromhex(message), bytes.fromhex(data))
+        self.assertEqual(plan_project(project, {}, image).image, image)
+
+    def test_old_stompilot_banks_are_flagged_imported_and_rewritten_with_a_length_byte(self):
+        image = legacy_fixture()
+        banks = ["Page 1, switch A, bank A", "Page 1, switch A, bank B", "Page 1, switch B, bank A"]
+        self.assertEqual(legacy_sysex_banks(image), banks)
+        switches = decode_config(image)["pages"][0]["switches"]
+        self.assertIn("old Stompilot format", switches["A"]["bank_b"])
+        self.assertIn("old Stompilot format", switches["B"]["bank_a"])
+        self.assertIn("3 SysEx bank(s) were written by an earlier Stompilot", config_summary(image))
+        project = import_controller_project(image, {})
+        switch_a = project["pages"][0]["switches"]["A"]
+        self.assertEqual([state["actions"] for state in switch_a["states"]], [
+            [{"type": "raw_midi", "message_hex": FX_ON}], [{"type": "raw_midi", "message_hex": FX_OFF}]])
+        self.assertEqual(project["pages"][0]["switches"]["B"]["states"][0]["actions"], [
+            {"type": "raw_midi", "message_hex": FX_ON}, {"type": "raw_midi", "message_hex": REV_MIX_10}])
+        # The imported native bytes keep the old format; writing must not reuse them.
+        self.assertTrue(switch_a["states"][0]["native_bank"]["sysex_hex"].startswith("F0"))
+        plan = plan_project(project, {}, image)
+        a, b = switch_offset(0, "A"), switch_offset(0, "B")
+        areas = [(a + BANK_A_SYSEX, FX_ON), (a + BANK_B_SYSEX, FX_OFF), (b + BANK_A_SYSEX, FX_ON + " " + REV_MIX_10)]
+        allowed = set()
+        for offset, vector in areas:
+            self.assertEqual(plan.image[offset:offset + 128], stored(vector))
+            allowed.update(range(offset, offset + 128))
+        changed = {index for index, pair in enumerate(zip(image, plan.image)) if pair[0] != pair[1]}
+        self.assertTrue(changed.issubset(allowed))
+        self.assertEqual(sum("old Stompilot format" in line for line in plan.summaries), 3)
+        self.assertEqual(legacy_sysex_banks(plan.image), [])
+        self.assertNotIn("earlier Stompilot", config_summary(plan.image))
+        reread = import_controller_project(plan.image, {})
+        self.assertEqual(plan_project(reread, {}, plan.image).ranges, ())
+
+    def test_only_active_banks_are_reported_in_the_old_format(self):
+        image = bytearray(legacy_fixture())
+        image[switch_offset(0, "A")] = 0
+        self.assertEqual(legacy_sysex_banks(image), ["Page 1, switch A, bank A", "Page 1, switch B, bank A"])
+        start = switch_offset(1, "C")
+        image[start + BANK_A_ROWS:start + BANK_A_ROWS + 5] = SYSEX_ROW
+        image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128] = legacy_stored(FX_ON)
+        self.assertEqual(len(legacy_sysex_banks(image)), 2)
+        image[PAGE_COUNT_OFFSET] = 1
+        image[switch_offset(1, "C")] = 0
+        self.assertIn("Page 2, switch C, bank A", legacy_sysex_banks(image))
+
+    def test_old_format_bank_too_long_for_the_length_byte_cannot_be_imported(self):
+        data = (b"\xF0" + bytes(126) + b"\xF7").hex(" ")
+        with self.assertRaisesRegex(ValidationError, "switch D.*128 bytes; the maximum is 127"):
+            self.import_bank_d(SYSEX_ROW, legacy_stored(data))
 
     def test_native_metadata_is_validated_before_reuse_or_reencoding(self):
         project = import_controller_project(self.image, {})

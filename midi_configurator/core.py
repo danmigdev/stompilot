@@ -17,7 +17,10 @@ from typing import Any, Callable, Mapping
 SCHEMA_VERSION = 1
 SWITCHES = ("A", "B", "C", "D")
 MAX_PAGES = 16
-MAX_SYSEX_BYTES = 128
+# A Chocolate Plus SysEx area holds a length byte, then up to 127 message bytes.
+MAX_SYSEX_BYTES = 127
+# Projects saved before the length byte was known declare this limit.
+LEGACY_MAX_SYSEX_BYTES = 128
 PROTOCOLS = ("tank_v09", "midi_cc")
 PROTOCOL_ENCODERS: dict[str, Callable[[dict, dict], CompiledAction]] = {}
 PROFILE_VALIDATORS: dict[str, Callable[[dict], None]] = {}
@@ -540,6 +543,12 @@ def compile_state(state: dict, profiles: Mapping[str, dict], max_sysex_bytes: in
                          _deduplicate(warnings))
 
 
+def sysex_limit(config: dict) -> int:
+    """Return a project's SysEx bank limit; an older 128 is capped at the real 127."""
+    controller = config.get("controller") or {}
+    return min(controller.get("max_sysex_bytes", MAX_SYSEX_BYTES), MAX_SYSEX_BYTES)
+
+
 def validate_config(config: dict, profiles: Mapping[str, dict]) -> dict:
     """Validate semantic project and each bank's controller constraints."""
     _object(config, "project")
@@ -549,7 +558,8 @@ def validate_config(config: dict, profiles: Mapping[str, dict]) -> dict:
     controller = _object(config.get("controller", {"id": "chocolate_plus"}), "project.controller")
     if controller.get("id") != "chocolate_plus":
         raise ValidationError("project.controller.id: chocolate_plus is supported")
-    max_bytes = _integer(controller.get("max_sysex_bytes", MAX_SYSEX_BYTES), "controller.max_sysex_bytes", 1, MAX_SYSEX_BYTES)
+    _integer(controller.get("max_sysex_bytes", MAX_SYSEX_BYTES), "controller.max_sysex_bytes", 1, LEGACY_MAX_SYSEX_BYTES)
+    max_bytes = sysex_limit(config)
     pages = _list(config.get("pages"), "project.pages")
     if not 1 <= len(pages) <= MAX_PAGES:
         raise ValidationError(f"project.pages: use 1 to {MAX_PAGES} pages")
@@ -580,7 +590,7 @@ def validate_config(config: dict, profiles: Mapping[str, dict]) -> dict:
 
 def compile_config(config: dict, profiles: Mapping[str, dict]) -> dict:
     validate_config(config, profiles)
-    limit = config.get("controller", {}).get("max_sysex_bytes", MAX_SYSEX_BYTES)
+    limit = sysex_limit(config)
     pages = []
     for page in config["pages"]:
         switches = {}

@@ -90,6 +90,27 @@ Each advanced switch has one mode byte, 16 five-byte MIDI rows for Bank A,
 enabled, MIDI channel, type, data 1, and data 2. Controller pages and a switch's
 alternating banks are separate concepts.
 
+A SysEx bank has one enabled row `01 00 04 00 00` (enabled, channel 1, type 4).
+Its 128-byte SysEx area is:
+
+| Byte | Contents |
+| --- | --- |
+| `0` | Length `n` of the bytes to send, at most 127 |
+| `1`–`n` | Sent exactly as stored: complete `F0`…`F7` messages, back to back |
+| `n+1`–`127` | Zero |
+
+The firmware does not add `F0`. Bank A of a switch that turns MOD on is
+`15 F0 00 32 09 49 00 00 00 02 0A 00 00 00 11 00 00 00 01 3E 03 F7 00 …`.
+This was checked on the wire on 2026-10-15 with a `FootCtrlPlus_013`: with
+`F0` in byte 0, the controller sent nothing; with a length byte but no `F0`,
+it sent the bytes unchanged, which arrived as CCs; with `[n] F0 … F7`, every
+frame arrived valid. MidiSuite's SysEx field hides byte 0, and text typed there
+without `F0` is sent without it.
+
+Stompilot v0.3.2 and earlier wrote the messages from byte 0. `F0` is never a
+valid length, so those banks are recognized on read and rewritten on the next
+write.
+
 The owned implementation is in `midi_configurator/chocolate.py` and
 `midi_configurator/chocolate_transport.py`. The transport writes only changed
 spans from a previously read image. It checks that image again before writing,
@@ -114,7 +135,8 @@ repository. Regression tests generate deterministic controller fixtures.
 Twelve transport tests exercise a memory-backed controller: packet length,
 identity and port guards, chunked reads, mismatched response prefixes, sparse
 writes, stale snapshots, rejected/lost acknowledgements, incomplete responses,
-full readback differences, timeouts, and port cleanup. These verify the write
-implementation without claiming a physical write test. Hardware writing and
-the controller's forwarding of multiple consecutive effect SysEx frames remain
-to be validated. Bluetooth configuration is not implemented.
+full readback differences, timeouts, and port cleanup. Since then, the
+transport has written physical controllers with a matching full readback, and
+a `FootCtrlPlus_013` forwarded three consecutive TANK frames from one bank over
+USB. Forwarding in host mode to a TANK on the HOST port remains to be
+validated. Bluetooth configuration is not implemented.

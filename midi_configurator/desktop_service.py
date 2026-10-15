@@ -19,20 +19,20 @@ from typing import Mapping
 
 if __package__:
     from .core import (ValidationError, compile_config, compile_state,
-                       load_profiles, validate_config, validate_profile)
+                       load_profiles, sysex_limit, validate_config, validate_profile)
     from .project import new_project, normalize_project
-    from .chocolate import (CONFIG_SIZE, _decode_bank, _native_bank,
-                            config_summary, import_controller_project, plan_project)
+    from .chocolate import (CONFIG_SIZE, _decode_bank, _native_bank, config_summary,
+                            import_controller_project, legacy_sysex_banks, plan_project)
     from .chocolate_transport import UsbChocolate, list_usb_devices
     from .runtime_paths import (data_directory as default_data_directory,
                                 profile_directory as default_profile_directory,
                                 resource_dir)
 else:
     from core import (ValidationError, compile_config, compile_state,
-                      load_profiles, validate_config, validate_profile)
+                      load_profiles, sysex_limit, validate_config, validate_profile)
     from project import new_project, normalize_project
-    from chocolate import (CONFIG_SIZE, _decode_bank, _native_bank,
-                           config_summary, import_controller_project, plan_project)
+    from chocolate import (CONFIG_SIZE, _decode_bank, _native_bank, config_summary,
+                           import_controller_project, legacy_sysex_banks, plan_project)
     from chocolate_transport import UsbChocolate, list_usb_devices
     from runtime_paths import (data_directory as default_data_directory,
                                profile_directory as default_profile_directory,
@@ -339,7 +339,7 @@ class DesktopService:
                 mode = "Single step (switch 2 banks)" if switch["mode"] == "alternating" else "Single step (single bank)"
                 lines.append(f"\nSWITCH {letter} · {switch['label']} · {mode}")
                 for index, state in enumerate(switch["states"]):
-                    result = compile_state(state, profiles, project["controller"].get("max_sysex_bytes", 128))
+                    result = compile_state(state, profiles, sysex_limit(project))
                     lines.append(f"\nBank {'A' if index == 0 else 'B'}: {state['label']}")
                     lines.extend(result.summaries)
                     if result.sysex_hex:
@@ -456,6 +456,15 @@ class DesktopService:
         else:
             note = (f"Editing and direct writing support Chocolate Plus firmware 16. This controller reports "
                     f"firmware {identity.firmware_version}. Its configuration is available for inspection.")
+        legacy = legacy_sysex_banks(image)
+        if legacy:
+            warning = (f"{len(legacy)} SysEx bank(s) were written by an earlier Stompilot in a format the "
+                       f"controller does not send: {'; '.join(legacy)}.")
+            if imported is not None:
+                warning += " Import as project, then preview and write it to rewrite them in the correct format."
+            elif identity.firmware_version == 16:
+                warning += " Writing a project that assigns these switches rewrites them in the correct format."
+            note = f"{warning} {note}".strip()
         return summary, imported, note
 
     def _controller_read(self, payload):

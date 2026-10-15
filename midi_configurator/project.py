@@ -1,6 +1,11 @@
 """Project defaults, independent of the user interface."""
 from copy import deepcopy
 
+try:
+    from .core import MAX_SYSEX_BYTES, sysex_limit
+except ImportError:
+    from core import MAX_SYSEX_BYTES, sysex_limit
+
 
 def empty_switch(letter):
     return {"label": f"Switch {letter}", "mode": "single",
@@ -16,7 +21,7 @@ def normalize_project(project):
     """Expand optional schema fields before displaying an imported project."""
     result = deepcopy(project)
     controller = result.setdefault("controller", {"id": "chocolate_plus"})
-    controller.setdefault("max_sysex_bytes", 128)
+    controller["max_sysex_bytes"] = sysex_limit(result)
     for page in result["pages"]:
         for letter in "ABCD":
             switch = page["switches"].setdefault(letter, empty_switch(letter))
@@ -29,7 +34,7 @@ def normalize_project(project):
 
 def new_project(example=True):
     project = {"schema_version": 1, "name": "Tremolo and Boost" if example else "New project",
-               "controller": {"id": "chocolate_plus", "max_sysex_bytes": 128},
+               "controller": {"id": "chocolate_plus", "max_sysex_bytes": MAX_SYSEX_BYTES},
                "pages": [empty_page(1)]}
     if not example:
         return project

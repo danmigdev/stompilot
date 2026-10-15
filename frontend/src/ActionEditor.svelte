@@ -74,7 +74,7 @@
         const clean=hex.replace(/\s/g,'');
         if(!/^(?:[a-fA-F0-9]{2})+$/.test(clean))throw Error('Enter complete hexadecimal MIDI bytes.');
         const bytes=clean.match(/.{2}/g)!.map(v=>parseInt(v,16));
-        if(rawIsSysex && !(bytes.length>=2&&bytes.length<=128&&bytes[0]===240&&bytes[bytes.length-1]===247&&bytes.slice(1,-1).every(v=>v<=127)))throw Error('Use a complete F0 … F7 message, with 7-bit data and at most 128 bytes.');
+        if(rawIsSysex && !(bytes.length>=2&&bytes.length<=127&&bytes[0]===240&&bytes[bytes.length-1]===247&&bytes.slice(1,-1).every(v=>v<=127)))throw Error('Use a complete F0 … F7 message, with 7-bit data and at most 127 bytes.');
         action={...original,type:'raw_midi',message_hex:bytes.map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(' ')};
       } else if(kind==='reload_current_preset') {
         if(!reloadAllowed)throw Error('Reload must be the only action in this state.');
@@ -107,7 +107,7 @@
         <p class="muted">Chocolate Plus stores MIDI commands. Target devices and effect models cannot be inferred from these bytes.</p>
         {#if rawIsSysex}
           <label>SysEx message (hex)<textarea class="hex-input" rows="6" bind:value={rawHex} spellcheck="false" data-testid="raw-hex"></textarea></label>
-          <p class="field-hint">One complete F0 … F7 message · up to 128 bytes. The original message is preserved until you save an edit.</p>
+          <p class="field-hint">One complete F0 … F7 message · up to 127 bytes. The original message is preserved until you save an edit.</p>
         {:else}
           <div class="form-grid"><label>MIDI channel<input type="number" min="1" max="16" bind:value={rawChannel} /></label><label>CC number<input type="number" min="0" max="127" bind:value={rawCC} data-testid="raw-cc" /></label><label>Value<input type="number" min="0" max="127" bind:value={rawValue} data-testid="raw-value" /></label></div>
         {/if}

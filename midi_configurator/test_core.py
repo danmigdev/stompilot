@@ -8,9 +8,10 @@ import unittest
 from .core import (
     CompiledAction, PROFILE_VALIDATORS, PROTOCOL_ENCODERS, ValidationError,
     compile_action, compile_config, compile_state, load_config, load_profiles,
-    packet, parse_packet, register_protocol, save_config, validate_config,
-    tank_live_write, validate_profile,
+    packet, parse_packet, register_protocol, save_config, sysex_limit,
+    validate_config, tank_live_write, validate_profile,
 )
+from .project import normalize_project
 
 
 FX_ON = "F0 00 32 09 49 00 00 00 02 08 00 00 00 11 00 00 00 01 42 03 F7"
@@ -61,7 +62,7 @@ def mix(value):
 
 def config_fixture():
     return {"schema_version": 1, "name": "Boost + reverb",
-            "controller": {"id": "chocolate_plus", "max_sysex_bytes": 128},
+            "controller": {"id": "chocolate_plus", "max_sysex_bytes": 127},
             "pages": [{"name": "Page 1", "switches": {
                 "A": {"label": "Tremolo", "mode": "alternating",
                       "states": [{"label": "ON", "actions": [enabled(True, "mod")]},
@@ -163,10 +164,29 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(compile_state({"actions": [mix(5)] * 5}, self.profiles).byte_count, 110)
         with self.assertRaisesRegex(ValidationError, "132 SysEx bytes"):
             compile_state({"actions": [mix(5)] * 6}, self.profiles)
-        with self.assertRaises(ValidationError):
-            compile_state({"actions": []}, self.profiles, max_sysex_bytes=256)
+        for limit in (128, 256):
+            with self.subTest(limit=limit), self.assertRaises(ValidationError):
+                compile_state({"actions": []}, self.profiles, max_sysex_bytes=limit)
         with self.assertRaisesRegex(ValidationError, "limit is 42"):
             compile_state({"actions": [enabled(True), mix(10)]}, self.profiles, max_sysex_bytes=42)
+
+    def test_projects_saved_with_the_old_128_byte_limit_load_with_the_real_127_limit(self):
+        config = config_fixture()
+        config["controller"]["max_sysex_bytes"] = 128
+        self.assertIs(validate_config(config, self.profiles), config)
+        self.assertEqual(sysex_limit(config), 127)
+        self.assertEqual(normalize_project(config)["controller"]["max_sysex_bytes"], 127)
+        frames = [{"type": "raw_midi", "message_hex": (b"\xF0" + bytes(61) + b"\xF7").hex(" ")},
+                  {"type": "raw_midi", "message_hex": (b"\xF0" + bytes(63) + b"\xF7").hex(" ")}]
+        config["pages"][0]["switches"]["C"] = {"mode": "single", "states": [{"actions": frames}]}
+        with self.assertRaisesRegex(ValidationError, "128 SysEx bytes; the limit is 127"):
+            validate_config(config, self.profiles)
+        config = config_fixture()
+        config["controller"]["max_sysex_bytes"] = 129
+        with self.assertRaisesRegex(ValidationError, "max_sysex_bytes"):
+            validate_config(config, self.profiles)
+        del config["controller"]["max_sysex_bytes"]
+        self.assertEqual(sysex_limit(config), 127)
 
     def test_generic_cc_state_is_rows_with_channel_and_explicit_values(self):
         on = enabled(True, "delay", "generic")
@@ -360,13 +380,14 @@ class ImportedMidiTests(unittest.TestCase):
                 compile_action({"type": "raw_midi", "message_hex": message_hex}, {})
 
     def test_raw_sysex_limits_apply_to_each_message_and_complete_bank(self):
-        maximum = {"type": "raw_midi", "message_hex": (b"\xF0" + bytes(126) + b"\xF7").hex(" ")}
-        oversized = {"type": "raw_midi", "message_hex": (b"\xF0" + bytes(127) + b"\xF7").hex(" ")}
-        self.assertEqual(compile_state({"actions": [maximum]}, {}).byte_count, 128)
-        with self.assertRaisesRegex(ValidationError, "129 bytes.*maximum is 128"):
+        # The controller's 128-byte area also holds the length byte.
+        maximum = {"type": "raw_midi", "message_hex": (b"\xF0" + bytes(125) + b"\xF7").hex(" ")}
+        oversized = {"type": "raw_midi", "message_hex": (b"\xF0" + bytes(126) + b"\xF7").hex(" ")}
+        self.assertEqual(compile_state({"actions": [maximum]}, {}).byte_count, 127)
+        with self.assertRaisesRegex(ValidationError, "128 bytes.*maximum is 127"):
             compile_action(oversized, {})
-        with self.assertRaisesRegex(ValidationError, "limit is 127"):
-            compile_state({"actions": [maximum]}, {}, max_sysex_bytes=127)
+        with self.assertRaisesRegex(ValidationError, "limit is 126"):
+            compile_state({"actions": [maximum]}, {}, max_sysex_bytes=126)
         frame = {"type": "raw_midi", "message_hex": (b"\xF0" + bytes(63) + b"\xF7").hex(" ")}
         with self.assertRaisesRegex(ValidationError, "130 SysEx bytes"):
             compile_state({"actions": [frame, frame]}, {})
@@ -399,7 +420,7 @@ class ImportedMidiTests(unittest.TestCase):
 
     def test_imported_project_json_and_export_retain_exact_messages_without_profiles(self):
         config = {"schema_version": 1, "name": "Imported controller",
-                  "controller": {"id": "chocolate_plus", "max_sysex_bytes": 128},
+                  "controller": {"id": "chocolate_plus", "max_sysex_bytes": 127},
                   "pages": [{"name": "Page 1", "switches": {
                       "A": {"label": "Imported CC", "mode": "alternating", "states": [
                           {"label": "Bank A", "actions": [{"type": "raw_midi", "message_hex": "B0 02 00"}]},
