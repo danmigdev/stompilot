@@ -14,7 +14,7 @@ from typing import Callable
 
 try:
     from .core import ValidationError, pack7, parse_packet
-except ImportError:  # The desktop launcher executes app.py directly.
+except ImportError:  # The desktop launcher executes desktop.py directly.
     from core import ValidationError, pack7, parse_packet
 
 
@@ -104,7 +104,7 @@ def changed_ranges(before: bytes, after: bytes) -> list[tuple[int, bytes]]:
 
 
 class UsbChocolate:
-    """A serialized connection; call from a worker, never from Tk's UI thread."""
+    """A serialized connection; call from a worker thread, never from the UI thread."""
 
     def __init__(self, input_name: str, output_name: str, *, timeout: float = 3.0):
         if "footctrlplus" not in input_name.casefold() or "footctrlplus" not in output_name.casefold():

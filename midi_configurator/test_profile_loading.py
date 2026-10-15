@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from . import app
+from . import desktop_service
 from .core import ValidationError
 
 
@@ -30,37 +30,41 @@ class ProfileLoadingTests(unittest.TestCase):
         self.temp = TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
+        self.data = root / "portable"
         self.bundled = root / "bundle" / "profiles"
-        self.custom = root / "portable" / "profiles"
+        self.custom = self.data / "profiles"
         self.bundled.mkdir(parents=True)
         self.builtin = cc_profile("builtin_device", "Bundled device")
         self.write_profile(self.bundled / "builtin.json", self.builtin)
-        bundled_patch = patch.object(app, "BUNDLED_PROFILE_DIR", self.bundled)
+        bundled_patch = patch.object(desktop_service, "resource_dir", return_value=self.bundled.parent)
         bundled_patch.start()
         self.addCleanup(bundled_patch.stop)
-        custom_patch = patch.object(app, "PROFILE_DIR", self.custom)
-        custom_patch.start()
-        self.addCleanup(custom_patch.stop)
 
     @staticmethod
     def write_profile(path, profile):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(profile), encoding="utf-8")
 
+    def load(self, profile_directory=None):
+        service = desktop_service.DesktopService(
+            data_directory=self.data, profile_directory=profile_directory or self.custom)
+        self.addCleanup(service.close)
+        return service.profiles
+
     def test_missing_custom_directory_loads_bundled_profiles_without_creating_it(self):
         self.assertFalse(self.custom.exists())
-        self.assertEqual(app.load_device_profiles(), {self.builtin["id"]: self.builtin})
+        self.assertEqual(self.load(), {self.builtin["id"]: self.builtin})
         self.assertFalse(self.custom.exists())
 
     def test_empty_custom_directory_keeps_bundled_profiles(self):
         self.custom.mkdir(parents=True)
-        self.assertEqual(app.load_device_profiles(), {self.builtin["id"]: self.builtin})
+        self.assertEqual(self.load(), {self.builtin["id"]: self.builtin})
 
     def test_custom_cc_profile_is_merged_with_bundled_profiles(self):
         custom = cc_profile("custom_device", "Custom device")
         custom["blocks"][0]["enable"]["cc"] = 74
         self.write_profile(self.custom / "custom.json", custom)
-        self.assertEqual(app.load_device_profiles(), {
+        self.assertEqual(self.load(), {
             self.builtin["id"]: self.builtin,
             custom["id"]: custom,
         })
@@ -74,16 +78,15 @@ class ProfileLoadingTests(unittest.TestCase):
                 custom[collision] = self.builtin[collision]
                 self.write_profile(self.custom / "custom.json", custom)
                 with self.assertRaises(ValidationError):
-                    app.load_device_profiles()
+                    self.load()
 
     def test_source_directory_loads_each_profile_once(self):
         custom = cc_profile("source_custom", "Source custom device")
         self.write_profile(self.bundled / "custom.json", custom)
-        with patch.object(app, "PROFILE_DIR", self.bundled):
-            self.assertEqual(app.load_device_profiles(), {
-                self.builtin["id"]: self.builtin,
-                custom["id"]: custom,
-            })
+        self.assertEqual(self.load(self.bundled), {
+            self.builtin["id"]: self.builtin,
+            custom["id"]: custom,
+        })
 
     def test_source_directory_also_rejects_duplicate_ids_and_names(self):
         for collision in ("id", "name"):
@@ -92,8 +95,8 @@ class ProfileLoadingTests(unittest.TestCase):
                 other["id"], other["name"] = "source_custom", "Source custom device"
                 other[collision] = self.builtin[collision]
                 self.write_profile(self.bundled / "custom.json", other)
-                with patch.object(app, "PROFILE_DIR", self.bundled), self.assertRaises(ValidationError):
-                    app.load_device_profiles()
+                with self.assertRaises(ValidationError):
+                    self.load(self.bundled)
 
 
 if __name__ == "__main__":

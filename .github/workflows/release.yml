@@ -75,7 +75,6 @@ jobs:
           from pathlib import Path
           import subprocess
           import sys
-          # Tk objects from legacy tests must never be collected by browser/USB threads.
           # Run every module, with the same strict checks, in a fresh interpreter.
           runner = '''
           import sys, unittest
