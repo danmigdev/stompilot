@@ -10,8 +10,6 @@ from pathlib import Path
 from urllib.parse import urlsplit
 import unittest
 
-from .chocolate import (BANK_A_ROWS, BANK_A_SYSEX, import_controller_project,
-                        plan_project, switch_offset)
 from .core import compile_config
 
 
@@ -148,56 +146,37 @@ class DesktopUiIntegrationTests(unittest.TestCase):
         self.assertIn(messages[1], output)
         self.assertIn("Bank B: Reload saved preset", output)
 
-    def test_controller_read_import_keeps_raw_cc_sysex_native_banks_and_preview_has_zero_changes(self):
-        image = bytearray(self.server.cc_fixture_image())
-        offset = switch_offset(0, "C")
-        # Disabled row data and unused SysEx storage must survive a native CC import.
-        image[offset + BANK_A_ROWS + 5:offset + BANK_A_ROWS + 10] = b"\x00\xFE\xFD\xFC\xFB"
-        image[offset + BANK_A_SYSEX:offset + BANK_A_SYSEX + 128] = bytes([0xA6]) * 128
-        image = bytes(image)
+    def test_controller_read_shows_the_configuration_and_leaves_the_project_alone(self):
+        image = self.server.raw_fixture_image()
         self.server.set_fixture_image(image)
         scanned = self.act("startup-read", "controller_scan")
         self.expect(self.page.get_by_test_id("controller-device")).to_have_value(self.server.device.name)
         self.assertIsNone(scanned["project"])
         read = self.act("controller-read", "controller_read")
-        self.expect(self.page.get_by_test_id("controller-import")).to_be_enabled()
-        self.expect(self.page.get_by_test_id("controller-summary")).to_contain_text("CC 2 = 0")
-        self.assertTrue(read["controller"]["can_import"])
+        summary = self.page.get_by_test_id("controller-summary")
+        self.expect(summary).to_contain_text("TANK Mini - stock firmware V09 · REV / Mix = 20")
+        self.expect(summary).to_contain_text("C: single; A: 1 CC row(s): ch 1 CC 2 = 0")
+        self.expect(summary).to_contain_text("A: SysEx (6 bytes) that no installed device profile sends")
+        self.expect(self.page.get_by_test_id("controller-import")).to_have_count(0)
         self.assertFalse(read["controller"]["can_write"])
         self.assertIsNone(read["project"])
-        imported = self.act("controller-import", "controller_import")
-        expected_project = import_controller_project(image, self.server.service.profiles)
-        self.expect(self.page.get_by_test_id("project-name")).to_have_value("Chocolate Plus configuration")
-        self.assertEqual(imported["project"], expected_project)
-        self.assertFalse(imported["dirty"])
-        self.assertIn("read at", imported["origin"])
-        expected_compiled = compile_config(expected_project, self.server.service.profiles)
-        self.page.get_by_test_id("switch-B").click()
-        sysex = expected_compiled["pages"][0]["switches"]["B"]["states"][0]["messages_hex"]
-        self.assert_hex(sysex)
-        self.page.get_by_test_id("action-edit-1").click()
-        self.expect(self.page.get_by_test_id("raw-hex")).to_have_value(sysex[1])
-        self.page.get_by_role("button", name="Close action editor").click()
-        self.page.get_by_test_id("switch-C").click()
-        self.assert_hex(["B0 02 00"])
-        self.page.get_by_test_id("action-edit-0").click()
-        self.expect(self.page.get_by_test_id("raw-cc")).to_have_value("2")
-        self.expect(self.page.get_by_test_id("raw-value")).to_have_value("0")
-        self.page.get_by_role("button", name="Close action editor").click()
-        self.assertEqual(self.server.service.snapshot()["project"], expected_project)
-        saved = self.act("save-project", "save_project")
-        saved_path = self.server.data_directory / "exports" / "stompilot.json"
-        self.assertEqual(json.loads(saved_path.read_text(encoding="utf-8")), expected_project)
-        self.assertFalse(saved["dirty"])
-        self.page.get_by_test_id("nav-controller").click()
-        reviewed = self.act("controller-preview", "controller_preview")
-        self.expect(self.page.get_by_test_id("write-preview")).to_be_visible()
-        self.expect(self.page.locator(".write-panel")).to_contain_text("0 changed bytes")
-        self.assertEqual(reviewed["controller"]["preview"]["changed_bytes"], 0)
-        self.assertEqual(plan_project(expected_project, self.server.service.profiles, image).image, image)
+        self.page.get_by_test_id("nav-editor").click()
+        self.expect(self.page.get_by_test_id("startup-new")).to_be_visible()
+        self.assertIsNone(self.server.service.snapshot()["project"])
         self.assertEqual(self.server.fixture_image, image)
         self.assertEqual(self.server.write_attempts, 0)
         self.assertFalse((self.server.data_directory / ".backups").exists())
+
+    def test_write_from_the_editor_connects_reads_and_previews_without_writing(self):
+        self.server.set_fixture_image(self.server.raw_fixture_image())
+        self.act("startup-open", "open_project")
+        # One click scans, reads the only controller, and previews the open project.
+        reviewed = self.act("editor-write", "controller_preview")
+        self.expect(self.page.get_by_test_id("write-preview")).to_be_in_viewport()
+        self.expect(self.page.get_by_test_id("controller-write")).to_be_enabled()
+        self.assertTrue(reviewed["controller"]["connected"])
+        self.assertGreater(reviewed["controller"]["preview"]["changed_bytes"], 0)
+        self.assertEqual(self.server.write_attempts, 0)
 
     def test_profile_import_selection_and_export_use_the_real_portable_profile_schema(self):
         profile = json.loads((PROJECT_ROOT / "examples" / "generic_cc_profile.json").read_text(encoding="utf-8"))

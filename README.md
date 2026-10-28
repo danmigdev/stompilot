@@ -7,7 +7,7 @@ Svelte interface runs in a Windows desktop window backed by a Python MIDI servic
 
 ## Download and start
 
-Download [Stompilot.exe from the latest release](https://github.com/danmigdev/stompilot/releases/latest)
+Download **Stompilot.exe** from this repository's **Releases** page
 and open it from a writable folder. The portable Windows app includes its Python
 runtime, compiled Svelte interface, and USB MIDI dependencies: no Python or Node.js
 installation is needed. **Microsoft Edge WebView2 Runtime** is required to display
@@ -30,25 +30,19 @@ or write a configuration automatically.
 ![Startup choices for a saved project, controller read, or empty project](docs/screenshots/startup.png)
 
 **Open saved project** loads a Stompilot JSON file. **Read Chocolate Plus** opens
-the controller page and scans available MIDI devices. Select the USB device,
-choose **Read controller**, inspect **Current configuration**, then choose
-**Import as project** for an editable local copy. **Chocolate Plus** in the
-sidebar opens the same workflow; **Scan devices** refreshes the device list.
+the controller page and scans available MIDI devices. Select the USB device and
+choose **Read controller** to see what the controller sends, under **Current
+configuration**. A read changes neither the controller nor the open project.
+**Chocolate Plus** in the sidebar opens the same page; **Scan devices**
+refreshes the device list.
 
-![Chocolate Plus page with a read configuration ready for import](docs/screenshots/controller-read.png)
+![Chocolate Plus page showing the configuration read from the controller](docs/screenshots/controller-read.png)
 
-The source banner shows the filename or controller read time, together with the
-local modification state. **Save** or **Save project** saves that local copy to
-a file; **Save as…** creates a separate file. Writing requires a controller read,
-**Preview changes**, **Write to controller**, and explicit confirmation of that
-preview. Reading and importing never write to the controller.
-
-The Chocolate stores MIDI assignments, not the TANK's current preset values.
-Stompilot preserves imported MIDI bytes without guessing a device, effect, or
-model. Firmware 16 Advanced Custom configurations with single or alternating
-switches and CC or complete SysEx messages can be imported. Unsupported active
-modes, gestures, or command types remain available for read-only inspection and
-cannot be imported as an editable project.
+The source banner shows the filename together with the local modification
+state. **Save** or **Save project** saves the project to a file; **Save as…**
+creates a separate file. Writing requires a controller read, **Preview
+changes**, **Write to controller**, and explicit confirmation of that preview.
+Reading never writes to the controller.
 
 ## Use case: Tremolo and a solo boost
 
@@ -61,7 +55,7 @@ saved project**. It contains one page with these assignments:
 | B: Solo boost | Boost ON + Hall Reverb Mix 20 + Dual Delay Mix 20 | Reload the current saved preset (experimental) |
 | C, D | No messages | — |
 
-![Project editor showing Boost ON with Reverb and Delay Mix 20](docs/screenshots/project-editor.png)
+![Project editor showing Boost ON with Reverb and Delay Mix 20, and Write to Chocolate Plus](docs/screenshots/project-editor.png)
 
 Prepare the preset on the TANK: FX = Boost, MOD = Tremolo, REV = Hall, and DLY =
 Dual. Reverb and Delay must already be enabled; the solo state changes their Mix
@@ -79,15 +73,29 @@ second state does not hard-code Boost OFF or Mix 5.
 ![Second solo-boost state containing only Reload saved preset](docs/screenshots/reload-state.png)
 
 Reload is experimental: its normal-mode stock V09 firmware path was checked
-statically, but physical reload through the Chocolate Plus is still unverified.
+statically, and sent to the TANK over its own USB it restored the saved preset
+exactly. Reload through the Chocolate Plus's HOST port is still unverified.
 Tuner or other special modes may defer it until normal mode resumes. It does
 not save or overwrite a preset. See the [reload protocol evidence](research/tank_preset_reload.md).
 
 ## Edit switches and actions
 
 Select a page and switch A-D, then choose **One sequence** or **Alternate two
-states**. Each state has its own ordered action list. Add or edit an ON/OFF
-action, an effect parameter, or the device-wide **Reload current preset** action.
+states**. Each state has its own ordered action list of effect actions and
+device-wide actions:
+
+- **Turn on / off** sets an effect ON or OFF; on the TANK it is SysEx.
+- **Toggle on / off (CC)** sends the effect's own CC (TANK: FX 0, AMP 1, MOD 2,
+  DLY 3, REV 4, CAB 5), which switches it from whatever state it is in.
+- **Set parameter** sets one effect value; on the TANK it is SysEx.
+- **Select preset** sends a MIDI Program Change, for example preset 2B on the
+  TANK (Program Change 4). The device loads the saved preset, so unsaved
+  changes on it are discarded. Any device profile can offer it by listing its
+  preset names.
+- **Set preset volume** (TANK) sets the volume of the preset that is playing,
+  from 0 to 100. Selecting or reloading a preset brings back its saved volume.
+- **Reload current preset** (TANK, experimental) restores the saved preset.
+
 The effect chosen in an action must already be selected in the TANK preset;
 selecting it in Stompilot does not change the hardware's effect model.
 
@@ -96,7 +104,8 @@ selecting it in Stompilot does not change the hardware's effect model.
 | ![Effect toggle action editor](docs/screenshots/effect-toggle-editor.png) | ![Effect parameter action editor](docs/screenshots/parameter-editor.png) | ![Experimental reload action editor](docs/screenshots/reload-action-editor.png) |
 
 Review the MIDI preview after editing. Reload must be the only action in its
-state. Required preset settings and verification status remain in the profile
+state. A Program Change is stored as a MIDI row, like a CC, so a state cannot
+combine it with SysEx commands such as TANK ON/OFF or preset volume. Required preset settings and verification status remain in the profile
 information and the guidance beneath the preview.
 
 ## Adjust the interface size
@@ -115,46 +124,67 @@ Use the scrollbars to reach content in smaller windows at higher zoom.
 | Ctrl + mouse wheel | Increase or decrease zoom |
 
 Zoom is saved in `settings.json`, separately from projects. Changing zoom does
-not mark a project as modified or change MIDI assignments. Windows file pickers
-use their system appearance.
+not mark a project as modified or change MIDI assignments. When Stompilot
+closes, it also saves the window's size and position there, and whether it is
+maximized. If that position is no longer on a connected screen, the window
+opens at its default size. Windows file pickers use their system appearance.
 
 ![Project editor with global interface zoom at 150 percent](docs/screenshots/zoomed-interface.png)
 
-## Edit assignments read from the Chocolate
+## Read the Chocolate configuration
 
-Imported assignments appear as **Imported MIDI**. Their exact commands remain
-available even when no matching device profile exists.
+**Current configuration** lists the working mode, then each active page and
+switch with its mode and the commands of each bank. The Chocolate stores MIDI
+assignments, not the TANK's current preset values. It also stores only the
+bytes of each command, not the device they are for. Stompilot names a command
+after an installed device profile only when that profile sends exactly the same
+bytes, so each TANK Mini SysEx command appears as its ON/OFF, parameter, model,
+or reload action. A TANK command carries a checksummed header, a length, and a
+live-patch address, so another manufacturer's SysEx cannot match it by
+accident; only a device that uses the same M-VAVE protocol and addresses could
+send identical bytes. CC commands are listed by channel, number, and value but
+never named, because any device can use the same CC numbers.
 
-![Editor containing a local copy of imported controller assignments](docs/screenshots/imported-editor.png)
+A TANK parameter command stores the block and the parameter slot, not the model
+selected in the preset. When models differ at that slot, the summary names each
+possible parameter, for example `MOD / Depth, Dry or Min = 30 (depends on the
+preset's model)`.
 
-A CC command can be edited by channel, controller number, and value. A SysEx
-command uses a hexadecimal editor, with complete-frame and 7-bit validation.
-These editors preserve raw commands rather than labeling them as a particular
-TANK effect.
-
-| Imported CC | Imported SysEx |
-| --- | --- |
-| ![Imported CC editor with channel, controller number, and value](docs/screenshots/imported-cc-editor.png) | ![Imported SysEx hexadecimal editor](docs/screenshots/imported-sysex-editor.png) |
+The read is for inspection only. To change the controller, open or create a
+project and write it. Projects that Stompilot 0.3.3 and earlier imported from
+the controller still open: their commands appear as **Imported MIDI** with
+their exact bytes, and unchanged banks are written back byte for byte.
 
 ## Review and write over USB
 
 1. Open or create the local project to apply. Connect the Chocolate Plus by USB
    and close MidiSuite.
-2. Open **Chocolate Plus** in the sidebar, choose **Scan devices**, select the
-   device, and choose **Read controller**.
-3. Choose **Preview changes** and compare **Write preview** with **Current
-   configuration**.
+2. In the project editor, choose **Write to Chocolate Plus**. Stompilot opens
+   the Chocolate Plus page, reads the controller if it is not connected yet,
+   and prepares **Write preview**. With several controllers connected, select
+   one, then choose **Read controller** and **Preview changes**. The same steps
+   are available from **Chocolate Plus** in the sidebar.
+3. Compare **Write preview** with **Current configuration**.
 4. Choose **Write to controller**, review the confirmation, then choose **Write
    exact preview** to apply that local project.
+5. On the verified original **V13**, wait for **Flash verified**. Set the pedal
+   to **O**, unplug USB-C at the pedal and keep its display off for **10 seconds**.
+   Return to **U**, reconnect USB-C and select **Verify after restart**. Stompilot
+   checks the complete saved configuration and confirms that normal saving is
+   active again. Keep the pedal in U and do not press its switches during writing.
+   If a save is interrupted, keep it powered and use **Restore backup** first.
 
 ![Controller programming preview for the local project](docs/screenshots/controller-write-preview.png)
 
-![Current controller configuration and Import as project button](docs/screenshots/controller-current.png)
+![Current configuration read from the controller](docs/screenshots/controller-current.png)
 
 Before writing, Stompilot reads the current configuration again and saves an
-exact backup beside the app. It writes changed bytes and reads the result back
-to verify it. A failed backup, changed controller configuration, failed
-acknowledgement, or readback mismatch stops the operation or reports an error.
+exact backup beside the app. Stock V13 uses a checked sector erase/program
+sequence with direct flash readback and a complete 24-KiB backup. The pending
+verification/recovery survives closing and reopening Stompilot. A failed backup,
+changed controller configuration, failed acknowledgement, or readback mismatch
+stops the operation or reports an error. Other supported firmware versions keep
+their existing write path, whose readback verifies RAM rather than permanent storage.
 See [write scope and backup details](docs/usage.md#controller-write-scope).
 
 These screenshots show the actual compiled Svelte interface using an isolated,
@@ -178,35 +208,64 @@ do not execute code. See [profile and encoder details](docs/usage.md#device-prof
 ## Manual MidiSuite workflow
 
 Use the **Copy MIDI bytes** icon beside **Hex bytes** for the selected state, or
-**Export MIDI** for a text summary of all assignments. **CC rows** displays
-channel, controller number, and value. In MidiSuite, choose the switch, mode, and Bank
-A/B. Paste all SysEx lines into the same **SysEx (hex)** field, or add one CC row
-per command, then save the controller configuration there. Keep every `F0` and
+**Export MIDI** for a text summary of all assignments. **MIDI rows** displays
+the channel, type (CC or Program Change), number, and value of each row. In
+MidiSuite, choose the switch, mode, and Bank A/B. Paste all SysEx lines into the
+same **SysEx (hex)** field, or add one CC or Program Change row per command,
+then save the controller configuration there. Keep every `F0` and
 `F7`: the controller sends the field's bytes exactly as stored and does not add
 `F0`, although MidiSuite's example hint leaves it out. The exported text is
 a human-readable summary, not a native MidiSuite import file.
 
 ## Supported scope and verification
 
-- Chocolate Plus USB programming targets firmware 16 (`FootCtrlPlus_016`): up to
-  8 pages, 16 CC rows per bank, and 127 SysEx bytes per bank. Bluetooth
-  configuration is not implemented.
-- A bank uses CC or SysEx. Its 128-byte SysEx area starts with a length byte,
-  followed by complete SysEx frames, concatenated, which the controller sends
-  exactly as stored. Over USB, a `FootCtrlPlus_013` sent three consecutive TANK
-  frames from one bank intact; host mode to a TANK on the HOST port still needs
-  a test.
+- Chocolate Plus USB programming targets firmware 12 to 16 (`FootCtrlPlus_012`
+  to `FootCtrlPlus_016`): up to 8 pages, 16 MIDI rows (CC or Program Change)
+  per bank, and 127 SysEx bytes per bank. Firmware versions have different save
+  implementations; V12 and V13 are distinct builds. The configuration
+  layout was mapped on firmware 16 and matches a full read of firmware 13. A
+  controller with other firmware can be read, but Stompilot does not write it;
+  enter the exported MIDI bytes in MidiSuite instead. Bluetooth configuration
+  is not implemented.
+- A bank uses MIDI rows or SysEx. Its 128-byte SysEx area starts with a length
+  byte, followed by complete SysEx frames, concatenated, which the controller
+  sends exactly as stored. Over USB, a `FootCtrlPlus_013` sent three
+  consecutive TANK frames from one bank intact, and a Program Change row (type
+  0) sent `C0 04`, which loaded TANK preset 2B.
+- On one `FootCtrlPlus_013`, configuration corruption was observed across
+  U -> H -> U, and was later reproduced in U alone after stock partial writes.
+  A proper sector erase/program sequence preserved a test pattern through a
+  cold restart and U -> H -> U. Stompilot's new writer uses that method, gated by
+  the exact audited stock V13 code hash. It needs 16 unused bytes in an Advanced
+  SysEx bank for temporary data; configurations with no suitable padding are
+  rejected before mutation. No firmware patch is installed, and the pedal's
+  own save routines remain unchanged. See [verified saving](docs/usage.md#controller-write-scope).
+  The new Stompilot writer also passed a physical V13 pattern-save, cold-start
+  and original-restoration test, checking the full 24-KiB configuration at each
+  stage. That application test changed inactive padding in one sector; it did
+  not repeat the laboratory U -> H -> U cycle.
+  The earlier corruption made TANK SysEx commands fail through the HOST port
+  while CC and Program Change rows worked.
+  [tank_mini_host_cc_pc.json](examples/tank_mini_host_cc_pc.json) uses only
+  CC toggles and a Program Change for that case. After an H start, read the
+  controller over USB to check that its banks are intact.
 - Stompilot v0.3.2 and earlier stored SysEx without the length byte, so the
   controller sent nothing for those banks. Reading such a controller lists the
-  affected banks; **Import as project**, **Preview changes**, and **Write to
-  controller** rewrite them in the correct format.
+  affected banks; writing a project that assigns those switches stores them in
+  the correct format.
 - USB discovery, identity, configuration reading, and writing with full readback
   have been used on physical controllers. Write, backup, and readback failure
   handling is checked with simulated controllers.
-- The TANK profile comes from stock V09 firmware analysis. MOD SysEx has been
-  tested on the device; the solo parameter sequence and preset reload still
-  need a complete physical test. Parameter display-unit conversions are not
-  assumed.
+- The TANK profile comes from stock V09 firmware analysis. On 2026-10-16,
+  `tank_check memory` on a `TANK MINI_009` passed all 842 checks: every ON/OFF,
+  each of the 61 models, and the minimum, maximum, and middle of all 250 model
+  parameters changed exactly the expected live-patch bytes; the stock CC
+  switches flip the same ON/OFF bytes; and Reload current preset restored the
+  saved preset. In a listening session the same day, every MOD and FX model and
+  parameter was heard, as were DLY Analog, preset volume, and a preset change.
+  AMP, CAB, REV, and the other delays were checked by readback only. Sending
+  through the HOST port is not yet tested. Parameter display-unit conversions
+  are not assumed.
 
 More technical context is in [development and usage notes](docs/usage.md) and the
 [Chocolate protocol notes](research/chocolate_protocol.md).

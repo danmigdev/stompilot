@@ -11,25 +11,64 @@
       "experimental": true,
       "evidence": {
         "status": "firmware_static_only",
-        "note": "Normal-mode reload path derived from stock V09 firmware analysis; not yet tested on physical hardware."
+        "note": "Normal-mode reload path derived from stock V09 firmware analysis. Checked on a TANK MINI_009 over USB on 2026-10-16, it restored the saved preset exactly; not yet tested through the Chocolate Plus HOST port."
       },
       "warnings": [
-        "Experimental action: reloading the current preset has not yet been tested on physical hardware.",
+        "Experimental action: tested on a TANK over USB, not yet through the Chocolate Plus HOST port.",
         "Reload restores all effect states and parameters from the saved preset, including Tremolo. Unsaved live edits are discarded; the preset stored in flash is not changed.",
-        "The reload path is verified statically for normal mode. Tuner or other special modes may defer it until normal mode resumes.",
+        "The reload path was derived for normal mode. Tuner or other special modes may defer it until normal mode resumes.",
         "Use reload as the only action in its state so restored preset values are not combined with simultaneous edits."
       ]
+    },
+    {
+      "id": "select_preset",
+      "label": "Select preset",
+      "presets": [
+        "1A",
+        "1B",
+        "1C",
+        "2A",
+        "2B",
+        "2C",
+        "3A",
+        "3B",
+        "3C",
+        "4A",
+        "4B",
+        "4C",
+        "5A",
+        "5B",
+        "5C",
+        "6A",
+        "6B",
+        "6C",
+        "7A",
+        "7B",
+        "7C"
+      ],
+      "evidence": {
+        "status": "device_checked",
+        "note": "MIDI Program Change 0 to 20 selects presets 1A to 7C. Checked on a TANK MINI_009 over USB on 2026-10-16: Program Change 4 from a FootCtrlPlus_013 row loaded preset 2B exactly as saved."
+      }
+    },
+    {
+      "id": "preset_volume",
+      "label": "Preset volume",
+      "evidence": {
+        "status": "device_checked",
+        "note": "Live patch bytes 0-1, a signed 16-bit level from 0 to 100. Checked on a TANK MINI_009 over USB on 2026-10-16: 43 and 100 were acknowledged, read back and heard."
+      }
     }
   ],
   "evidence": {
-    "status": "firmware_static_and_partial_device_check",
-    "note": "Profile derived from stock firmware V09. FX and MOD ON/OFF via CC confirmed by the user. MOD SysEx writes tested on the device; REV packets validated statically and not yet tested live from the Chocolate."
+    "status": "device_checked",
+    "note": "Profile derived from stock firmware V09. Checked on a TANK MINI_009 over USB on 2026-10-16: every ON/OFF, model and parameter command changed exactly the expected live-patch bytes (tank_check memory, 842 checks), and MOD and FX models and parameters were heard. Sending through the Chocolate Plus HOST port is not yet tested."
   },
   "notes": [
     "Parameters use raw control values from 0 to 100. Display ranges in the catalog are metadata; no linear conversion to Hz, ms, or other units is applied.",
     "Stock firmware does not support the continuous CC commands proposed in the experimental catalog. Parameters in this profile are encoded as SysEx.",
     "Set the model on the device before using these actions.",
-    "A model change may load parameters asynchronously. For an ON/OFF and parameter sequence, set up the model in the preset first.",
+    "Selecting an FX, MOD, DLY or REV model loads that model's defaults; AMP and CAB keep their current values.",
     "AMP and CAB: 20 model indices with shared parameter descriptors; commercial names have not been verified, so models are displayed by index."
   ],
   "sources": [
@@ -57,15 +96,15 @@
       "label": "FX",
       "wire_id": 0,
       "evidence": {
-        "status": "firmware_static",
-        "note": "Offsets and descriptors derived from the firmware; live control of these parameters still needs verification."
+        "status": "device_checked",
+        "note": "Checked on a TANK MINI_009 over USB on 2026-10-16: ON/OFF, every model and every parameter read back as sent; all three models and their parameters heard."
       },
       "toggle": {
         "cc": 0,
         "value": 0,
         "evidence": {
-          "status": "user_confirmed",
-          "note": "The stock CC command toggles the state with each message; the value remains 0."
+          "status": "device_checked",
+          "note": "The stock CC command toggles the state with each message; the value remains 0. Checked on a TANK MINI_009 over USB on 2026-10-16: it flips the same ON/OFF byte as the SysEx command."
         }
       },
       "models": [
@@ -209,15 +248,15 @@
       "label": "AMP",
       "wire_id": 1,
       "evidence": {
-        "status": "firmware_static",
-        "note": "Offsets and descriptors derived from the firmware; live control of these parameters still needs verification."
+        "status": "device_checked",
+        "note": "Checked on a TANK MINI_009 over USB on 2026-10-16: ON/OFF, every model and every parameter read back as sent; not checked by ear. Selecting a model keeps the current parameter values."
       },
       "toggle": {
         "cc": 1,
         "value": 0,
         "evidence": {
-          "status": "firmware_static",
-          "note": "The stock CC command toggles the state with each message; the value remains 0."
+          "status": "device_checked",
+          "note": "The stock CC command toggles the state with each message; the value remains 0. Checked on a TANK MINI_009 over USB on 2026-10-16: it flips the same ON/OFF byte as the SysEx command."
         }
       },
       "models": [
@@ -1969,14 +2008,14 @@
       "wire_id": 2,
       "evidence": {
         "status": "device_checked",
-        "note": "Live writes to the MOD block verified; model and parameters in the current preset."
+        "note": "Checked on a TANK MINI_009 over USB on 2026-10-16: ON/OFF, every model and every parameter read back as sent; all seven models and their parameters heard."
       },
       "toggle": {
         "cc": 2,
         "value": 0,
         "evidence": {
-          "status": "user_confirmed",
-          "note": "The stock CC command toggles the state with each message; the value remains 0."
+          "status": "device_checked",
+          "note": "The stock CC command toggles the state with each message; the value remains 0. Checked on a TANK MINI_009 over USB on 2026-10-16: it flips the same ON/OFF byte as the SysEx command."
         }
       },
       "models": [
@@ -2420,15 +2459,15 @@
       "label": "DLY",
       "wire_id": 3,
       "evidence": {
-        "status": "firmware_static",
-        "note": "Offsets and descriptors derived from the firmware; live control of these parameters still needs verification."
+        "status": "device_checked",
+        "note": "Checked on a TANK MINI_009 over USB on 2026-10-16: ON/OFF, every model and every parameter read back as sent; Analog heard."
       },
       "toggle": {
         "cc": 3,
         "value": 0,
         "evidence": {
-          "status": "firmware_static",
-          "note": "The stock CC command toggles the state with each message; the value remains 0."
+          "status": "device_checked",
+          "note": "The stock CC command toggles the state with each message; the value remains 0. Checked on a TANK MINI_009 over USB on 2026-10-16: it flips the same ON/OFF byte as the SysEx command."
         }
       },
       "models": [
@@ -2938,15 +2977,15 @@
       "label": "REV",
       "wire_id": 4,
       "evidence": {
-        "status": "static_roundtrip",
-        "note": "Packets and offsets verified statically. Mix 5/10 has not yet been tested live from the Chocolate."
+        "status": "device_checked",
+        "note": "Checked on a TANK MINI_009 over USB on 2026-10-16: ON/OFF, every model and every parameter read back as sent; not checked by ear."
       },
       "toggle": {
         "cc": 4,
         "value": 0,
         "evidence": {
-          "status": "firmware_static",
-          "note": "The stock CC command toggles the state with each message; the value remains 0."
+          "status": "device_checked",
+          "note": "The stock CC command toggles the state with each message; the value remains 0. Checked on a TANK MINI_009 over USB on 2026-10-16: it flips the same ON/OFF byte as the SysEx command."
         }
       },
       "models": [
@@ -3479,15 +3518,15 @@
       "label": "CAB",
       "wire_id": 5,
       "evidence": {
-        "status": "firmware_static",
-        "note": "Offsets and descriptors derived from the firmware; live control of these parameters still needs verification."
+        "status": "device_checked",
+        "note": "Checked on a TANK MINI_009 over USB on 2026-10-16: ON/OFF, every model and every parameter read back as sent; not checked by ear. Selecting a model keeps the current parameter values."
       },
       "toggle": {
         "cc": 5,
         "value": 0,
         "evidence": {
-          "status": "firmware_static",
-          "note": "The stock CC command toggles the state with each message; the value remains 0."
+          "status": "device_checked",
+          "note": "The stock CC command toggles the state with each message; the value remains 0. Checked on a TANK MINI_009 over USB on 2026-10-16: it flips the same ON/OFF byte as the SysEx command."
         }
       },
       "models": [

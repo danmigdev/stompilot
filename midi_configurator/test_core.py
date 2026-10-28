@@ -6,10 +6,11 @@ import tempfile
 import unittest
 
 from .core import (
-    CompiledAction, PROFILE_VALIDATORS, PROTOCOL_ENCODERS, ValidationError,
-    compile_action, compile_config, compile_state, load_config, load_profiles,
-    packet, parse_packet, register_protocol, save_config, sysex_limit,
-    validate_config, tank_live_write, validate_profile,
+    CompiledAction, PROFILE_VALIDATORS, PROTOCOL_DECODERS, PROTOCOL_ENCODERS,
+    TANK_LIVE_PATCH, ValidationError, compile_action, compile_config, compile_state,
+    decode_message, describe_decoded, load_config, load_profiles, pack7, packet,
+    parse_packet, register_protocol, save_config, sysex_limit, validate_config,
+    tank_live_write, validate_profile,
 )
 from .project import normalize_project
 
@@ -99,7 +100,7 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(state.sysex_hex, FX_ON + "\n" + REV_MIX_10)
         self.assertEqual(state.byte_count, 43)
         self.assertEqual(len(state.messages), 2)
-        self.assertEqual(state.cc_rows, ())
+        self.assertEqual(state.midi_rows, ())
         self.assertTrue(any("consecutive" in warning for warning in state.warnings))
         self.assertEqual(state.evidence_status, "mixed")
 
@@ -195,7 +196,7 @@ class CompilerTests(unittest.TestCase):
         state = compile_state({"actions": [on, off]}, self.profiles)
         self.assertEqual(state.messages, (b"\xBF\x1A\x7F", b"\xB0\x1A\x00"))
         self.assertEqual(state.sysex_hex, "")
-        self.assertEqual(state.cc_rows[0], {"channel": 16, "type": "CC", "data1": 26,
+        self.assertEqual(state.midi_rows[0], {"channel": 16, "type": "CC", "data1": 26,
                                             "data2": 127, "hex": "BF 1A 7F"})
 
     def test_generic_profile_default_channel_and_parameter_boundaries(self):
@@ -210,7 +211,7 @@ class CompilerTests(unittest.TestCase):
             compile_action(dict(action, value=128), self.profiles)
 
     def test_cc_and_sysex_cannot_silently_share_one_bank(self):
-        with self.assertRaisesRegex(ValidationError, "mix CC and SysEx"):
+        with self.assertRaisesRegex(ValidationError, "cannot mix CC or Program Change with SysEx"):
             compile_state({"actions": [mix(10), enabled(True, "delay", "generic")]}, self.profiles)
 
     def test_parameter_step_is_validated(self):
@@ -398,15 +399,15 @@ class ImportedMidiTests(unittest.TestCase):
         sysex = {"type": "raw_midi", "message_hex": REV_MIX_10}
         state = compile_state({"actions": [cc, enabled(False, "delay", "generic")]}, profiles)
         self.assertEqual(state.messages, (b"\xBF\x02\x00", b"\xB0\x1A\x00"))
-        self.assertEqual(state.cc_rows[0], {"channel": 16, "type": "CC", "data1": 2,
+        self.assertEqual(state.midi_rows[0], {"channel": 16, "type": "CC", "data1": 2,
                                           "data2": 0, "hex": "BF 02 00"})
         self.assertEqual(state.evidence_status, "mixed")
         state = compile_state({"actions": [enabled(True), sysex]}, profiles)
         self.assertEqual(state.sysex_hex, FX_ON + "\n" + REV_MIX_10)
         self.assertEqual(state.byte_count, 43)
-        self.assertEqual(state.cc_rows, ())
+        self.assertEqual(state.midi_rows, ())
         for actions in ([cc, sysex], [cc, mix(10)], [sysex, enabled(True, "delay", "generic")]):
-            with self.subTest(actions=actions), self.assertRaisesRegex(ValidationError, "mix CC and SysEx"):
+            with self.subTest(actions=actions), self.assertRaisesRegex(ValidationError, "cannot mix CC or Program Change with SysEx"):
                 compile_state({"actions": actions}, profiles)
 
     def test_raw_action_after_model_write_does_not_require_invented_target_fields(self):
@@ -511,7 +512,7 @@ class ReloadPresetTests(unittest.TestCase):
                     compile_state({"actions": actions}, self.profiles)
         state = compile_state({"actions": [self.action]}, self.profiles, max_sysex_bytes=21)
         self.assertEqual(state.sysex_hex, RELOAD_CURRENT)
-        self.assertEqual(state.cc_rows, ())
+        self.assertEqual(state.midi_rows, ())
         self.assertEqual(state.evidence_status, "firmware_static_only")
         with self.assertRaisesRegex(ValidationError, "limit is 20"):
             compile_state({"actions": [self.action]}, self.profiles, max_sysex_bytes=20)
@@ -568,6 +569,236 @@ class ReloadPresetTests(unittest.TestCase):
         result = compile_action({"device_id": "tank_mini_v09", "type": "reload_current_preset"}, profiles)
         self.assertEqual(result.hex, RELOAD_CURRENT)
         self.assertEqual(result.evidence_status, "firmware_static_only")
+
+
+def tank_write(address, data):
+    return packet(0x22, b"\x04" + address.to_bytes(4, "little") + len(data).to_bytes(3, "little") + data)
+
+
+class DecodeTests(unittest.TestCase):
+    """A SysEx read from the controller is named only when a profile sends exactly those bytes."""
+
+    def setUp(self):
+        self.profiles = {"tank": reload_profile_fixture(), "generic": cc_fixture()}
+
+    def test_tank_writes_decode_to_the_actions_that_produce_them(self):
+        for action in (enabled(True), enabled(False), enabled(True, "mod"), mix(10), mix(5),
+                       {"device_id": "tank", "type": "reload_current_preset"}):
+            with self.subTest(action=action):
+                message = compile_action(action, self.profiles).messages[0]
+                self.assertEqual(decode_message(message, self.profiles), [action])
+
+    def test_every_bundled_tank_action_decodes_to_actions_with_the_same_bytes(self):
+        profiles = load_profiles(Path(__file__).parent / "profiles")
+        device = "tank_mini_v09"
+        actions = [{"device_id": device, "type": "reload_current_preset"}]
+        for block in profiles[device]["blocks"]:
+            actions += [{"device_id": device, "type": "enable", "block_id": block["id"], "value": value}
+                        for value in (True, False)]
+            for model in block["models"]:
+                actions.append({"device_id": device, "type": "model", "block_id": block["id"],
+                                "model_id": model["id"]})
+                actions += [{"device_id": device, "type": "parameter", "block_id": block["id"],
+                             "model_id": model["id"], "param_id": parameter["id"], "value": parameter.get("max", 100)}
+                            for parameter in model["parameters"]]
+        self.assertGreater(len(actions), 300)
+        for action in actions:
+            with self.subTest(action=action):
+                message = compile_action(action, profiles).messages[0]
+                decoded = decode_message(message, profiles)
+                self.assertIn(action, decoded)
+                for candidate in decoded:
+                    self.assertEqual(compile_action(candidate, profiles).messages, (message,))
+                if action["type"] != "parameter":
+                    self.assertEqual(decoded, [action])
+
+    def test_parameter_writes_name_the_block_and_slot_but_not_the_model(self):
+        profiles = load_profiles(Path(__file__).parent / "profiles")
+        depth = {"device_id": "tank_mini_v09", "type": "parameter", "block_id": "mod",
+                 "model_id": "0", "param_id": "depth", "value": 30}
+        decoded = decode_message(compile_action(depth, profiles).messages[0], profiles)
+        mod = next(block for block in profiles["tank_mini_v09"]["blocks"] if block["id"] == "mod")
+        self.assertEqual([action["model_id"] for action in decoded], [model["id"] for model in mod["models"]])
+        self.assertEqual(describe_decoded(decoded, profiles),
+                         "TANK Mini - stock firmware V09 · MOD / Depth, Dry or Min = 30 (depends on the preset's model)")
+        decoded = decode_message(bytes.fromhex(REV_MIX_10), profiles)
+        self.assertEqual(len(decoded), 6)
+        self.assertEqual(describe_decoded(decoded, profiles), "TANK Mini - stock firmware V09 · REV / Mix = 10")
+        decoded = decode_message(bytes.fromhex(FX_ON), profiles)
+        self.assertEqual(describe_decoded(decoded, profiles), "TANK Mini - stock firmware V09 · FX: ON")
+
+    def test_messages_that_no_profile_sends_are_not_decoded(self):
+        raw = b"\x00\x59\x22" + (9).to_bytes(3, "little") + bytes.fromhex("04 08 00 00 10 01 00 00 01")
+        bad_checksum = b"\xf0" + pack7(raw + bytes([(255 - sum(raw[6:])) & 255 ^ 1])) + b"\xf7"
+        for name, message in [
+            ("another manufacturer", bytes.fromhex("F0 41 01 02 7F F7")),
+            ("wrong checksum", bad_checksum),
+            ("read instead of write", packet(0x23, bytes.fromhex("04 08 00 00 10 01 00 00"))),
+            ("unused live patch byte", tank_write(TANK_LIVE_PATCH + 2, b"\x01")),
+            ("enable value 2", tank_write(TANK_LIVE_PATCH + 8, b"\x02")),
+            ("block missing from the profile", tank_write(TANK_LIVE_PATCH + 9, b"\x01")),
+            ("value above the maximum", tank_write(TANK_LIVE_PATCH + 70, (101).to_bytes(2, "little"))),
+            ("one-byte parameter write", tank_write(TANK_LIVE_PATCH + 70, b"\x0a")),
+            ("other memory address", tank_write(0x30000000, b"\x01")),
+            ("CC from a CC profile", bytes.fromhex("B0 1A 7F")),
+        ]:
+            with self.subTest(name):
+                self.assertEqual(decode_message(message, self.profiles), [])
+        self.assertEqual(decode_message(bytes.fromhex(FX_ON), {"generic": cc_fixture()}), [])
+        self.assertEqual(decode_message(bytes.fromhex(RELOAD_CURRENT), {"tank": tank_fixture()}), [])
+
+    def test_registered_decoders_keep_only_actions_with_the_same_bytes(self):
+        def encode(action, profile):
+            return CompiledAction((bytes([0xF0, 0x7D, action["value"], 0xF7]),), "Registered", "documented")
+        def propose(message, profile):
+            return [{"type": "set", "value": 0}, {"type": "set", "value": message[2]}]
+        profiles = {"extension": {"schema_version": 1, "id": "extension", "name": "Extension",
+                                  "protocol": "test_decoder"}}
+        try:
+            register_protocol("test_decoder", encode, lambda profile: None, decoder=propose)
+            self.assertEqual(decode_message(bytes.fromhex("F0 7D 05 F7"), profiles),
+                             [{"device_id": "extension", "type": "set", "value": 5}])
+            with self.assertRaisesRegex(ValidationError, "decoder"):
+                register_protocol("test_decoder", encode, decoder="propose", replace=True)
+            register_protocol("test_decoder", encode, replace=True)
+            self.assertEqual(decode_message(bytes.fromhex("F0 7D 05 F7"), profiles), [])
+        finally:
+            PROTOCOL_ENCODERS.pop("test_decoder", None)
+            PROFILE_VALIDATORS.pop("test_decoder", None)
+            PROTOCOL_DECODERS.pop("test_decoder", None)
+
+
+
+def preset_capabilities(protocol="tank_v09"):
+    presets = {"id": "select_preset", "label": "Select preset", "presets": ["1A", "1B", "2B"],
+               "evidence": {"status": "device_checked"}}
+    volume = {"id": "preset_volume", "label": "Preset volume", "evidence": {"status": "device_checked"}}
+    return [presets, volume] if protocol == "tank_v09" else [presets]
+
+
+class PresetActionTests(unittest.TestCase):
+    def setUp(self):
+        tank, generic = tank_fixture(), cc_fixture()
+        tank["device_actions"] = preset_capabilities()
+        generic["device_actions"] = preset_capabilities("midi_cc")
+        self.profiles = {"tank": tank, "generic": generic}
+
+    def compile(self, **action):
+        return compile_action(action, self.profiles)
+
+    def test_select_preset_is_a_program_change_for_any_profile_that_lists_presets(self):
+        result = self.compile(device_id="tank", type="select_preset", value=2)
+        self.assertEqual(result.hex, "C0 02")
+        self.assertEqual(result.summary, "TANK Mini V09: Select preset 2B")
+        self.assertEqual(result.evidence_status, "device_checked")
+        self.assertIn("unsaved changes on the device are discarded", result.warnings[0])
+        self.assertEqual(self.compile(device_id="generic", type="select_preset", value=0, channel=16).hex, "CF 00")
+        with self.assertRaisesRegex(ValidationError, "action.value: expected an integer from 0 to 2"):
+            self.compile(device_id="tank", type="select_preset", value=3)
+
+    def test_preset_volume_writes_the_live_patch_level_on_tank_profiles_only(self):
+        # The bytes a TANK MINI_009 acknowledged and applied for volume 43 on 2026-10-16.
+        self.assertEqual(self.compile(device_id="tank", type="preset_volume", value=43).hex,
+                         "F0 00 32 09 51 00 00 00 02 00 00 00 00 21 00 00 00 2B 00 78 05 F7")
+        result = self.compile(device_id="tank", type="preset_volume", value=100)
+        self.assertEqual(result.messages, (tank_live_write(0, b"\x64\x00"),))
+        self.assertEqual(result.summary, "TANK Mini V09: Preset volume = 100")
+        for value in (-1, 101, True, 50.0):
+            with self.subTest(value=value), self.assertRaisesRegex(ValidationError, "action.value"):
+                self.compile(device_id="tank", type="preset_volume", value=value)
+        with self.assertRaisesRegex(ValidationError, "Preset volume is only available for tank_v09"):
+            self.compile(device_id="generic", type="preset_volume", value=50)
+
+    def test_device_actions_need_their_capability_and_reject_target_fields(self):
+        del self.profiles["tank"]["device_actions"]
+        for action_type, label in (("select_preset", "Select preset"), ("preset_volume", "Preset volume")):
+            with self.subTest(action_type=action_type), self.assertRaisesRegex(ValidationError, f"{label} is unavailable"):
+                self.compile(device_id="tank", type=action_type, value=1)
+        for field in ("block_id", "preset", "address"):
+            with self.subTest(field=field), self.assertRaisesRegex(ValidationError, "does not accept target"):
+                self.compile(device_id="generic", type="select_preset", value=1, **{field: "fx"})
+
+    def test_capabilities_are_validated(self):
+        for presets, reason in ((None, "expected a list"), ([], "1 to 128"), (["A"] * 129, "1 to 128"),
+                                (["1A", ""], "nonempty text"), (["1A", "1A"], "unique")):
+            profile = cc_fixture()
+            profile["device_actions"] = [{"id": "select_preset", "label": "Select preset", "presets": presets}]
+            with self.subTest(presets=presets), self.assertRaisesRegex(ValidationError, reason):
+                validate_profile(profile)
+        profile = cc_fixture()
+        profile["device_actions"] = [{"id": "preset_volume", "label": "Preset volume"}]
+        with self.assertRaisesRegex(ValidationError, "only available for tank_v09"):
+            validate_profile(profile)
+
+    def test_program_change_is_a_midi_row_that_can_join_cc_rows_but_not_sysex(self):
+        select = {"device_id": "tank", "type": "select_preset", "value": 2}
+        delay_on = {"device_id": "generic", "block_id": "delay", "type": "enable", "value": True}
+        state = compile_state({"actions": [select, delay_on]}, self.profiles)
+        self.assertEqual(state.midi_rows, ({"channel": 1, "type": "PC", "data1": 2, "data2": 0, "hex": "C0 02"},
+                                           {"channel": 1, "type": "CC", "data1": 26, "data2": 127, "hex": "B0 1A 7F"}))
+        self.assertEqual(state.sysex_hex, "")
+        for actions in ([select, enabled(True)], [{"device_id": "tank", "type": "preset_volume", "value": 9}, select]):
+            with self.subTest(actions=actions), self.assertRaisesRegex(ValidationError, "cannot mix CC or Program Change with SysEx"):
+                compile_state({"actions": actions}, self.profiles)
+
+    def test_preset_volume_decodes_and_program_changes_are_not_named(self):
+        message = self.compile(device_id="tank", type="preset_volume", value=77).messages[0]
+        actions = decode_message(message, self.profiles)
+        self.assertEqual(actions, [{"device_id": "tank", "type": "preset_volume", "value": 77}])
+        self.assertEqual(describe_decoded(actions, self.profiles), "TANK Mini V09: Preset volume = 77")
+        self.assertEqual(decode_message(tank_live_write(0, b"\x65\x00"), self.profiles), [])
+        # Like CC, a Program Change could be meant for any device.
+        self.assertEqual(decode_message(bytes.fromhex("C0 02"), self.profiles), [])
+
+    def test_bundled_tank_profile_lists_presets_1a_to_7c(self):
+        profiles = load_profiles(Path(__file__).resolve().parent / "profiles")
+        capability = next(item for item in profiles["tank_mini_v09"]["device_actions"] if item["id"] == "select_preset")
+        self.assertEqual(len(capability["presets"]), 21)
+        self.assertEqual(capability["presets"][4], "2B")
+        result = compile_action({"device_id": "tank_mini_v09", "type": "select_preset", "value": 4}, profiles)
+        self.assertEqual(result.hex, "C0 04")
+        self.assertEqual(result.summary, "TANK Mini - stock firmware V09: Select preset 2B")
+
+
+
+class ToggleTests(unittest.TestCase):
+    def setUp(self):
+        tank, generic = tank_fixture(), cc_fixture()
+        tank["blocks"][0]["toggle"] = {"cc": 0, "value": 0, "evidence": {"status": "device_checked"}}
+        generic["blocks"][0]["toggle"] = {"cc": 28}
+        self.profiles = {"tank": tank, "generic": generic}
+
+    def test_toggle_sends_the_block_cc_on_the_action_channel(self):
+        result = compile_action({"device_id": "tank", "type": "toggle", "block_id": "fx"}, self.profiles)
+        self.assertEqual(result.hex, "B0 00 00")
+        self.assertEqual(result.summary, "TANK Mini V09 · FX: toggle ON/OFF (CC 0)")
+        self.assertEqual(result.evidence_status, "device_checked")
+        self.assertIn("does not set a fixed state", result.warnings[0])
+        generic = compile_action({"device_id": "generic", "type": "toggle", "block_id": "delay", "channel": 3}, self.profiles)
+        self.assertEqual(generic.hex, "B2 1C 00")
+        state = compile_state({"actions": [{"device_id": "tank", "type": "toggle", "block_id": "fx"}]}, self.profiles)
+        self.assertEqual(state.midi_rows[0]["hex"], "B0 00 00")
+
+    def test_toggle_needs_the_block_command_and_names_a_given_model(self):
+        with self.assertRaisesRegex(ValidationError, "toggle command is unavailable"):
+            compile_action({"device_id": "tank", "type": "toggle", "block_id": "rev"}, self.profiles)
+        result = compile_action({"device_id": "tank", "type": "toggle", "block_id": "fx", "model_id": "boost"}, self.profiles)
+        self.assertIn("The preset must already have FX = Boost selected", result.warnings[1])
+
+    def test_host_mode_example_uses_only_cc_and_program_change_rows(self):
+        profiles = load_profiles(Path(__file__).resolve().parent / "profiles")
+        example = Path(__file__).resolve().parent.parent / "examples" / "tank_mini_host_cc_pc.json"
+        pages = compile_config(load_config(example, profiles), profiles)["pages"]
+        sent = {switch: [state["messages_hex"] for state in data["states"]] for switch, data in pages[0]["switches"].items()}
+        self.assertEqual(sent, {"A": [["B0 02 00"]], "B": [["B0 00 00"]], "C": [[]], "D": [["C0 04"]]})
+
+    def test_toggle_definitions_are_validated(self):
+        for toggle, reason in (([], "expected a JSON object"), ({"value": 0}, "toggle.cc"),
+                               ({"cc": 128}, "toggle.cc"), ({"cc": 1, "value": -1}, "toggle.value")):
+            profile = cc_fixture()
+            profile["blocks"][0]["toggle"] = toggle
+            with self.subTest(toggle=toggle), self.assertRaisesRegex(ValidationError, reason):
+                validate_profile(profile)
 
 
 if __name__ == "__main__":

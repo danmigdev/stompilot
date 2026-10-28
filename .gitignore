@@ -9,12 +9,23 @@ dist/
 /profiles/
 /research/*.json
 /research/*.bin
+/research/tank-checks/
 /*.png
 .env
 .env.*
+*.dmp
+/m-vave-report/
+/research/chocolate-firmware/artifacts/
 /settings.json
 frontend/node_modules/
 frontend/build/
 frontend/.svelte-kit/
 frontend/test-results/
 frontend/playwright-report/
+# Android build output and machine-specific SDK path.
+android/.gradle/
+android/.idea/
+android/.kotlin/
+android/app/build/
+android/build/
+android/local.properties

@@ -108,11 +108,14 @@ class PreviewServer(AbstractContextManager):
             raise ValueError("The documentation fixture requires a complete controller image.")
         self.fixture_image = image
 
-    def cc_fixture_image(self):
-        """Supplement the real use case with one raw CC for its editor screenshot."""
+    def raw_fixture_image(self):
+        """Supplement the real use case with one CC and one SysEx that no profile sends."""
         project = deepcopy(self.example_project)
         project["pages"][0]["switches"]["C"]["states"][0]["actions"] = [
             {"type": "raw_midi", "message_hex": "B0 02 00"}
+        ]
+        project["pages"][0]["switches"]["D"]["states"][0]["actions"] = [
+            {"type": "raw_midi", "message_hex": "F0 7D 01 02 03 F7"}
         ]
         return plan_project(project, self.service.profiles, bytes(CONFIG_SIZE)).image
 

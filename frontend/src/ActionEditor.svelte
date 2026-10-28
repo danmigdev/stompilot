@@ -33,11 +33,20 @@
   $: high = parameter?.max ?? (profile?.protocol === 'midi_cc' ? 127 : 100);
   $: step = parameter?.step ?? 1;
   $: supportsReload = profile?.device_actions?.some(a=>a.id==='reload_current_preset');
+  $: presetNames = profile?.device_actions?.find(a=>a.id==='select_preset')?.presets || [];
+  $: supportsVolume = profile?.device_actions?.some(a=>a.id==='preset_volume');
+  $: if(kind==='select_preset'&&!(Number.isInteger(value)&&value>=0&&value<presetNames.length))value=0;
+  $: if(kind==='preset_volume'&&!(Number.isInteger(value)&&value>=0&&value<=100))value=100;
   $: canEnable = profile?.protocol === 'tank_v09' || !!block?.enable;
+  $: canToggle = !!block?.toggle;
+  $: hasToggles = !!profile?.blocks.some(b=>b.toggle);
   $: canModel = profile?.protocol === 'midi_cc' && model?.cc!==undefined;
   $: existingTankModel = original?.type==='model' && profile?.protocol==='tank_v09';
-  $: summary = kind==='raw_midi' ? (rawIsSysex ? 'Imported SysEx · original bytes retained' : `Imported CC · channel ${rawChannel} · CC ${rawCC} = ${rawValue}`) : kind==='reload_current_preset' ? 'Reload the whole saved preset' : kind==='model'?`Select model · ${model?.label || 'Effect'}`:kind==='parameter' ? `${model?.label || 'Effect'} · ${parameter?.label || 'Parameter'} = ${value}` : `${model?.label || block?.label || 'Effect'} · ${enabled.toUpperCase()}`;
+  $: summary = kind==='raw_midi' ? (rawIsSysex ? 'Imported SysEx · original bytes retained' : `Imported CC · channel ${rawChannel} · CC ${rawCC} = ${rawValue}`) : kind==='reload_current_preset' ? 'Reload the whole saved preset' : kind==='select_preset' ? `Select preset ${presetNames[value] ?? value} · Program Change ${value}` : kind==='preset_volume' ? `Preset volume = ${value}` : kind==='toggle' ? `${model?.label || block?.label || 'Effect'} · TOGGLE (CC ${block?.toggle?.cc ?? '?'})` : kind==='model'?`Select model · ${model?.label || 'Effect'}`:kind==='parameter' ? `${model?.label || 'Effect'} · ${parameter?.label || 'Parameter'} = ${value}` : `${model?.label || block?.label || 'Effect'} · ${enabled.toUpperCase()}`;
 
+  // Device-wide actions have no block, model or address; their fields are removed on save.
+  const deviceKinds=['reload_current_preset','select_preset','preset_volume'];
+  const targetFields=['block_id','model_id','param_id','preset','preset_id','preset_index','preset_number','index','address','offset','memory_type','opcode','length','data'];
   function selectProfile() { blockId=profiles.find(p=>p.id===profileId)?.blocks[0]?.id || ''; selectBlock(); }
   function selectBlock() {
     const selected=profiles.find(p=>p.id===profileId)?.blocks.find(b=>b.id===blockId);
@@ -49,9 +58,10 @@
     const p=profiles.find(p=>p.id===profileId), b=p?.blocks.find(b=>b.id===blockId);
     if(kind==='parameter'&&!selected?.parameters.length)kind='enable';
     if(kind==='enable'&&p?.protocol!=='tank_v09'&&!b?.enable)kind='parameter';
+    if(kind==='toggle'&&!b?.toggle)kind=p?.protocol==='tank_v09'||b?.enable?'enable':'parameter';
     if(kind==='model'&&p?.protocol==='midi_cc'&&selected?.cc===undefined)kind=b?.enable?'enable':'parameter';
     if(kind==='parameter'&&!selected?.parameters.length&&selected?.cc!==undefined)kind='model';
-    if(kind==='reload_current_preset'&&!p?.device_actions?.some(a=>a.id==='reload_current_preset'))kind=b?.enable?'enable':selected?.parameters.length?'parameter':'model';
+    if(deviceKinds.includes(kind)&&!p?.device_actions?.some(a=>a.id===kind))kind=b?.enable?'enable':selected?.parameters.length?'parameter':'model';
   }
   function selectParameter() {
     const selected=profiles.find(p=>p.id===profileId)?.blocks.find(b=>b.id===blockId)?.models.find(m=>m.id===modelId)?.parameters.find(p=>p.id===parameterId);
@@ -79,8 +89,15 @@
       } else if(kind==='reload_current_preset') {
         if(!reloadAllowed)throw Error('Reload must be the only action in this state.');
         action={...original,device_id:profileId,type:kind};
-        for(const field of ['block_id','model_id','param_id','value','preset','preset_id','preset_index','preset_number','index','address','offset','memory_type','opcode','length','data'])delete action[field];
+        for(const field of [...targetFields,'value'])delete action[field];
         if(original?.channel===undefined)delete action.channel;
+      } else if(kind==='select_preset'||kind==='preset_volume') {
+        const count=kind==='select_preset'?presetNames.length:101;
+        if(!Number.isInteger(value)||value<0||value>=count)throw Error(kind==='select_preset'?'Choose a preset.':'Use a preset volume from 0 to 100.');
+        if(kind==='select_preset'&&(!Number.isInteger(channel)||channel<1||channel>16))throw Error('Use a MIDI channel from 1 to 16.');
+        action={...original,device_id:profileId,type:kind,value:Number(value)};
+        for(const field of targetFields)delete action[field];
+        if(kind==='select_preset')action.channel=Number(channel);else if(original?.channel===undefined)delete action.channel;
       } else {
         if(existingTankModel&&kind==='model'){dispatch('save',structuredClone(original!));return;}
         if(!profile||!block||(kind!=='enable'&&!model))throw Error('Choose a device, block and effect.');
@@ -88,6 +105,7 @@
         action={...original,device_id:profileId,block_id:blockId,model_id:modelId,channel:Number(channel),type:kind,value:kind==='enable'?enabled==='on':Number(value)};
         if(!model)delete action.model_id;
         delete action.param_id;
+        if(kind==='toggle'){delete action.value;if(!canToggle)throw Error('This effect has no on/off toggle command in this profile.');}
         if(kind==='model'){delete action.value;if(!canModel)throw Error('This profile does not support MIDI model selection.');}
         if(kind==='parameter') {
           if(!parameter||!Number.isInteger(value)||value<low||value>high||(value-low)%step!==0)throw Error(`Use ${parameter?.label || 'a value'} from ${low} to ${high}, in steps of ${step}.`);
@@ -113,9 +131,15 @@
         {/if}
       {:else}
         <label>Device profile<select bind:value={profileId} on:change={selectProfile} disabled={existingTankModel}>{#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></label>
-        <label>Action<select bind:value={kind} data-testid="action-kind" disabled={existingTankModel}><option value="enable" disabled={!canEnable}>Turn on / off</option><option value="parameter" disabled={!parameters.length}>Set parameter</option>{#if canModel||original?.type==='model'}<option value="model" disabled={!canModel&& !existingTankModel}>{existingTankModel?'Existing TANK model command':'Select model (CC)'}</option>{/if}{#if supportsReload}<option value="reload_current_preset" disabled={!reloadAllowed}>Reload current preset · experimental</option>{/if}</select></label>
+        <label>Action<select bind:value={kind} data-testid="action-kind" disabled={existingTankModel}><option value="enable" disabled={!canEnable}>Turn on / off</option>{#if hasToggles}<option value="toggle" disabled={!canToggle}>Toggle on / off (CC)</option>{/if}<option value="parameter" disabled={!parameters.length}>Set parameter</option>{#if canModel||original?.type==='model'}<option value="model" disabled={!canModel&& !existingTankModel}>{existingTankModel?'Existing TANK model command':'Select model (CC)'}</option>{/if}{#if presetNames.length}<option value="select_preset">Select preset</option>{/if}{#if supportsVolume}<option value="preset_volume">Set preset volume</option>{/if}{#if supportsReload}<option value="reload_current_preset" disabled={!reloadAllowed}>Reload current preset · experimental</option>{/if}</select></label>
         {#if kind==='reload_current_preset'}
-          <div class="notice amber"><Icon name="alert" /><div><strong>Experimental · stock TANK Mini V09</strong><p>Restores the entire saved preset, including every effect’s on/off state, and discards temporary edits. Use this action alone in its state, in normal playing mode. Physical hardware verification is pending.</p></div></div>
+          <div class="notice amber"><Icon name="alert" /><div><strong>Experimental · stock TANK Mini V09</strong><p>Restores the entire saved preset, including every effect’s on/off state, and discards temporary edits. Use this action alone in its state, in normal playing mode. Tested on a TANK over USB; not yet through the Chocolate Plus HOST port.</p></div></div>
+        {:else if kind==='select_preset'}
+          <div class="form-grid"><label>Preset<select bind:value={value} data-testid="action-preset">{#each presetNames as name,index}<option value={index}>{name}</option>{/each}</select></label><label>MIDI channel<input type="number" min="1" max="16" bind:value={channel} /></label></div>
+          <p class="field-hint">Sends Program Change {value}. The device loads the saved preset, so unsaved changes on it are discarded.</p>
+        {:else if kind==='preset_volume'}
+          <label>Volume <span class="muted">0–100</span><div class="range-row"><input type="range" min="0" max="100" step="1" bind:value={value} aria-label="Preset volume slider" /><input type="number" min="0" max="100" step="1" bind:value={value} data-testid="volume-value" /></div></label>
+          <p class="field-hint">Sets the volume of the preset playing on the TANK. Selecting or reloading a preset brings back its saved volume; nothing is saved.</p>
         {:else if existingTankModel}
           <div class="notice amber"><Icon name="info" /><p>This existing TANK model command is preserved exactly. Set effect models on the device before adding on/off or parameter actions. To replace this command, remove it and add a new action.</p></div>
         {:else}
@@ -125,6 +149,8 @@
             <label>Parameter<select bind:value={parameterId} on:change={selectParameter} data-testid="action-parameter">{#each parameters as p}<option value={p.id}>{p.label}</option>{/each}</select></label>
             <label>Value <span class="muted">{low}–{high} · step {step}</span><div class="range-row"><input type="range" min={low} max={high} {step} bind:value={value} aria-label="Parameter value slider" /><input type="number" min={low} max={high} {step} bind:value={value} data-testid="parameter-value" /></div></label>
             <p class="field-hint">Default {Math.min(high,Math.max(low,parameter?.default??low))} · {profile?.protocol==='tank_v09'?'raw control value':'MIDI value'}{#if parameter?.display_range} · catalog display range {parameter.display_range.min}–{parameter.display_range.max}; no unit conversion applied{/if}</p>
+          {:else if kind==='toggle'}
+            <p class="field-hint" data-testid="toggle-hint">Sends CC {block?.toggle?.cc}. Each press switches {block?.label} off if it is on and on if it is off, so the result depends on the effect's state on the device.</p>
           {:else if kind==='enable'}
             <div class="segmented" aria-label="Effect state"><button class:active={enabled==='on'} on:click={()=>enabled='on'} data-testid="effect-on"><Icon name="power" />ON</button><button class:active={enabled==='off'} on:click={()=>enabled='off'} data-testid="effect-off"><Icon name="power" />OFF</button></div>
           {/if}

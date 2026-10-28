@@ -16,7 +16,7 @@ from . import desktop_service
 from .chocolate import BANK_A_ROWS, CONFIG_SIZE, legacy_sysex_banks, plan_project, switch_offset
 from .core import compile_config
 from .project import new_project
-from .test_chocolate import legacy_fixture, readable_fixture
+from .test_chocolate import earlier_import, legacy_fixture, readable_fixture
 from .test_core import cc_fixture, config_fixture, tank_fixture
 
 
@@ -67,7 +67,7 @@ class DesktopServiceTests(unittest.TestCase):
                     raise RuntimeError("Chocolate Plus did not answer command 0x23.")
                 return self.image
 
-            def write_config(self, before, after, progress_callback=None):
+            def write_config(self, before, after, progress_callback=None, *, backup_directory=None):
                 backups = list((owner.directory / ".backups").glob("*.json"))
                 owner.assertTrue(backups, "The exact durable backup must exist before writing")
                 backup = json.loads(backups[-1].read_text(encoding="utf-8"))
@@ -260,7 +260,7 @@ class DesktopServiceTests(unittest.TestCase):
         project = before["project"]
         actions = project["pages"][0]["switches"]["A"]["states"][0]["actions"]
         actions.append({"type": "raw_midi", "message_hex": "B0 12 7F"})
-        self.error("set_project", {"project": project}, "CC and SysEx")
+        self.error("set_project", {"project": project}, "cannot mix CC or Program Change with SysEx")
 
     def test_profile_import_is_durable_reloaded_duplicate_safe_and_exports_same_schema(self):
         profile = cc_fixture()
@@ -330,79 +330,117 @@ class DesktopServiceTests(unittest.TestCase):
         with patch.object(desktop_service, "_atomic_text", side_effect=PermissionError("Read-only drive")):
             self.assertEqual(self.request("set_zoom", {"percent": 200})["zoom_percent"], 200)
 
-    def test_read_is_nonmutating_and_import_preserves_exact_native_banks(self):
+    def test_window_bounds_are_saved_beside_other_preferences_and_invalid_values_are_ignored(self):
+        settings = self.directory / "settings.json"
+        settings.write_text(json.dumps({"ui_zoom_percent": 125, "other_setting": 3}), encoding="utf-8")
+        self.assertIsNone(self.service.window_geometry())
+        bounds = {"x": -1000, "y": 200, "width": 900, "height": 1000, "maximized": False}
+        self.service.save_window_geometry(bounds)
+        self.assertEqual(json.loads(settings.read_text(encoding="utf-8")),
+                         {"ui_zoom_percent": 125, "other_setting": 3, "window": bounds})
+        self.request("set_zoom", {"percent": 150})
+        self.assertEqual(self.service.window_geometry(), bounds)
+        for value in (None, [], {"x": 1, "y": 2, "width": 3}, dict(bounds, x=True), dict(bounds, width=0),
+                      dict(bounds, height=-5), dict(bounds, y=40000), dict(bounds, maximized="yes"), dict(bounds, x=1.5)):
+            with self.subTest(value=value):
+                settings.write_text(json.dumps({"window": value}), encoding="utf-8")
+                self.assertIsNone(self.service.window_geometry())
+        settings.write_text("{", encoding="utf-8")
+        self.assertIsNone(self.service.window_geometry())
+        with patch.object(desktop_service, "_atomic_text", side_effect=PermissionError("Read-only drive")):
+            self.service.save_window_geometry(bounds)
+
+    def test_read_is_read_only_and_never_replaces_the_project(self):
         state = self.read()
-        self.assertTrue(state["controller"]["can_import"])
+        self.assertNotIn("can_import", state["controller"])
         self.assertFalse(state["controller"]["can_write"])
         self.assertIsNone(state["project"])
         self.assertIsNone(state["controller"]["preview"])
         self.assertIn("Advanced Custom", state["controller"]["summary"])
+        self.assertEqual(state["controller"]["status"], "Configuration read. Reading does not change the controller.")
         self.assertEqual(self.transport.image, self.image)
-        imported = self.request("controller_import")
-        self.assertFalse(imported["dirty"])
-        self.assertIn("read at", imported["origin"])
-        self.assertIn("native_bank", imported["project"]["pages"][0]["switches"]["A"]["states"][0])
-        self.assertEqual(plan_project(imported["project"], self.profiles, self.image).image, self.image)
-        path = self.directory / "native.json"
-        self.choices.append(path)
-        self.request("save_project")
-        self.choices.append(path)
-        reopened = self.request("open_project")
-        self.assertEqual(reopened["project"], imported["project"])
-        self.assertEqual(plan_project(reopened["project"], self.profiles, self.image).image, self.image)
+        self.error("controller_import", contains="Unknown desktop operation")
+        previous = self.install_project()["project"]
+        self.assertEqual(self.request("controller_read")["project"], previous)
         self.assertFalse(any(isinstance(call, tuple) and call[0] == "write" for call in self.usb_calls))
         self.assertFalse((self.directory / ".backups").exists())
 
-    def test_read_flags_old_stompilot_sysex_and_import_preview_write_repairs_it(self):
+    def test_read_summary_names_tank_commands(self):
+        self.image = plan_project(config_fixture(), self.profiles, readable_fixture()).image
+        state = self.read()
+        self.assertIn("\n    A: TANK Mini V09 · REV / Mix = 10\n", state["controller"]["summary"])
+        self.assertIn("not the device they are for", state["controller"]["summary"])
+
+    def test_projects_imported_by_earlier_releases_open_and_write_back_the_same_bytes(self):
+        path = self.directory / "imported.json"
+        path.write_text(json.dumps(earlier_import(self.image)), encoding="utf-8")
+        self.choices.append(path)
+        opened = self.request("open_project")
+        self.assertIn("native_bank", opened["project"]["pages"][0]["switches"]["A"]["states"][0])
+        self.read()
+        self.assertEqual(self.request("controller_preview")["controller"]["preview"]["changed_bytes"], 0)
+
+    def test_read_flags_old_stompilot_sysex_and_writing_a_project_repairs_it(self):
         self.image = legacy_fixture()
         state = self.read()
         status = state["controller"]["status"]
         self.assertIn("3 SysEx bank(s) were written by an earlier Stompilot", status)
         self.assertIn("Page 1, switch A, bank B", status)
-        self.assertIn("Import as project, then preview and write", status)
+        self.assertIn("Writing a project that assigns these switches rewrites them", status)
         self.assertIn("old Stompilot format", state["controller"]["summary"])
-        self.request("controller_import")
+        self.install_project()
         preview = self.request("controller_preview")["controller"]["preview"]
         self.assertEqual(sum("old Stompilot format" in line for line in preview["summaries"]), 3)
         self.assertGreater(preview["changed_bytes"], 0)
         result = self.request("controller_write")
         self.assertIn("readback verified", result["controller"]["status"])
+        self.assertIn("Permanent storage has not been verified", result["controller"]["status"])
         self.assertEqual(legacy_sysex_banks(self.transport.image), [])
         self.assertNotIn("earlier Stompilot", result["controller"]["summary"])
 
     def test_old_sysex_on_unsupported_firmware_is_reported_without_a_repair_path(self):
-        self.identity = SimpleNamespace(name="FootCtrlPlus_013", firmware_version=13)
+        self.identity = SimpleNamespace(name="FootCtrlPlus_017", firmware_version=17)
         self.image = legacy_fixture()
         status = self.read()["controller"]["status"]
         self.assertIn("written by an earlier Stompilot", status)
-        self.assertNotIn("Import as project", status)
-        self.assertIn("firmware 13", status)
+        self.assertNotIn("Writing a project", status)
+        self.assertIn("reports firmware 17. Stompilot writes only firmware 12 to 16", status)
+        self.assertIn("shows this configuration but cannot change it", status)
 
-    def test_unsupported_firmware_is_inspect_only(self):
-        self.identity = SimpleNamespace(name="FootCtrlPlus_015", firmware_version=15)
+    def test_firmware_12_to_16_share_one_layout_and_are_written(self):
+        for version in (12, 13, 15):
+            with self.subTest(version=version):
+                self.identity = SimpleNamespace(name=f"FootCtrlPlus_0{version}", firmware_version=version)
+                state = self.preview()
+                self.assertTrue(state["controller"]["can_write"])
+                self.assertNotIn("firmware", state["controller"]["status"])
+                result = self.request("controller_write")
+                self.assertIn("already matches the controller" if version == 13 else "RAM readback verified", result["controller"]["status"])
+                self.request("controller_disconnect")
+
+    def test_unsupported_firmware_is_read_only(self):
+        self.identity = SimpleNamespace(name="FootCtrlPlus_011", firmware_version=11)
         self.install_project()
         state = self.read()
         self.assertTrue(state["controller"]["connected"])
-        self.assertFalse(state["controller"]["can_import"])
         self.assertFalse(state["controller"]["can_write"])
-        self.assertIn("firmware 15", state["controller"]["status"])
+        self.assertIn("firmware 11", state["controller"]["status"])
         self.assertIn("Page 1", state["controller"]["summary"])
         previous = state["project"]
-        self.error("controller_import", contains="firmware 16")
-        self.error("controller_preview", contains="firmware 16")
-        self.error("controller_write", contains="firmware 16")
+        message = self.error("controller_preview", contains="reports firmware 11. Stompilot writes only firmware 12 to 16")
+        self.assertIn("enter its MIDI bytes in MidiSuite", message)
+        self.error("controller_write", contains="reports firmware 11")
         self.assertEqual(self.request("bootstrap")["project"], previous)
 
-    def test_unsupported_native_assignment_is_inspect_only_for_import(self):
+    def test_unsupported_native_assignment_is_summarized_and_a_project_can_replace_it(self):
         image = bytearray(self.image)
-        image[switch_offset(0, "A") + BANK_A_ROWS: switch_offset(0, "A") + BANK_A_ROWS + 5] = b"\x01\x00\x00\x20\x00"
+        image[switch_offset(0, "A") + BANK_A_ROWS: switch_offset(0, "A") + BANK_A_ROWS + 5] = b"\x01\x00\x02\x20\x00"
         self.image = bytes(image)
         state = self.read()
-        self.assertFalse(state["controller"]["can_import"])
-        self.assertIn("cannot be imported", state["controller"]["status"])
-        self.assertIn("Page 1", state["controller"]["summary"])
-        self.error("controller_import", contains="inspection")
-        self.assertIsNone(self.request("bootstrap")["project"])
+        self.assertIn("  A: single; A: 3 MIDI row(s)\n", state["controller"]["summary"])
+        self.assertIsNone(state["project"])
+        self.install_project()
+        self.assertTrue(self.request("controller_preview")["controller"]["can_write"])
 
     def test_project_edit_invalidates_review_and_read_requires_explicit_preview(self):
         state = self.preview()
@@ -424,7 +462,6 @@ class DesktopServiceTests(unittest.TestCase):
         self.error("controller_write", contains="changed since the preview")
         self.assertFalse((self.directory / ".backups").exists())
         self.assertFalse(self.request("bootstrap")["controller"]["can_write"])
-        self.assertFalse(self.request("bootstrap")["controller"]["can_import"])
         self.request("controller_read")
         self.request("controller_preview")
         self.transport.identity = SimpleNamespace(name="FootCtrlPlus_017", firmware_version=17)
@@ -459,7 +496,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertFalse(result["controller"]["can_write"])
         self.assertIsNone(result["controller"]["preview"])
 
-    def test_transport_write_error_and_bad_readback_keep_backup_and_disable_stale_import(self):
+    def test_transport_write_error_and_bad_readback_keep_backup_and_disable_writing(self):
         for failure in ("fail_write", "wrong_verification"):
             with self.subTest(failure=failure):
                 self.preview()
@@ -468,7 +505,6 @@ class DesktopServiceTests(unittest.TestCase):
                 self.assertTrue(list((self.directory / ".backups").glob("*.json")))
                 state = self.request("bootstrap")
                 self.assertFalse(state["controller"]["busy"])
-                self.assertFalse(state["controller"]["can_import"])
                 self.assertFalse(state["controller"]["can_write"])
                 self.request("controller_disconnect")
 
@@ -483,7 +519,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.transport.fail_read = True
         self.error("controller_read", contains="did not answer")
         self.assertEqual(self.request("bootstrap")["project"], previous)
-        self.assertFalse(self.request("bootstrap")["controller"]["can_import"])
+        self.assertFalse(self.request("bootstrap")["controller"]["can_write"])
 
     def test_busy_guard_and_progress_polling_do_not_wait_for_usb_io(self):
         self.preview()
@@ -499,7 +535,6 @@ class DesktopServiceTests(unittest.TestCase):
             self.assertLess(time.monotonic() - start, 0.25)
             self.assertTrue(state["controller"]["busy"])
             self.assertIn("512 / 23,646 bytes", state["controller"]["status"])
-            self.assertFalse(state["controller"]["can_import"])
             self.assertFalse(state["controller"]["can_write"])
             self.assertTrue(self.service.is_busy)
             self.assertFalse(self.service.can_close)

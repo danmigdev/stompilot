@@ -22,8 +22,9 @@ if __package__:
                        load_profiles, sysex_limit, validate_config, validate_profile)
     from .project import new_project, normalize_project
     from .chocolate import (CONFIG_SIZE, _decode_bank, _native_bank, config_summary,
-                            import_controller_project, legacy_sysex_banks, plan_project)
+                            legacy_sysex_banks, plan_project)
     from .chocolate_transport import UsbChocolate, list_usb_devices
+    from .chocolate_persistence import pending_save
     from .runtime_paths import (data_directory as default_data_directory,
                                 profile_directory as default_profile_directory,
                                 resource_dir)
@@ -32,14 +33,18 @@ else:
                       load_profiles, sysex_limit, validate_config, validate_profile)
     from project import new_project, normalize_project
     from chocolate import (CONFIG_SIZE, _decode_bank, _native_bank, config_summary,
-                           import_controller_project, legacy_sysex_banks, plan_project)
+                           legacy_sysex_banks, plan_project)
     from chocolate_transport import UsbChocolate, list_usb_devices
+    from chocolate_persistence import pending_save
     from runtime_paths import (data_directory as default_data_directory,
                                profile_directory as default_profile_directory,
                                resource_dir)
 
 
 JSON_TYPES = (("JSON files", "*.json"),)
+# These versions use the supported configuration layout; their persistence
+# implementations differ. Exact stock V13 gets the verified sector writer.
+WRITABLE_FIRMWARE = range(12, 17)
 TEXT_TYPES = (("MIDI message summary", "*.txt"),)
 
 
@@ -150,11 +155,22 @@ class DesktopService:
         self.devices = []
         self.transport = self.identity = self.image = self.plan = None
         self._reviewed_hash = self._reviewed_image = None
-        self._import_project = None
         self.busy = False
         self.summary = ""
         self.status = "Choose the controller, then read its configuration."
+        self.pending = None
+        self._refresh_pending()
         self._closed = False
+
+    def _refresh_pending(self):
+        try:
+            journal = pending_save(self.backup_directory)
+            value = journal.summary() if journal else None
+        except (OSError, ValueError, RuntimeError) as error:
+            value = {"status": "invalid", "backup_name": "", "restored": False,
+                     "message": f"The saved recovery record cannot be checked: {error}. Keep the backup files."}
+        with self._lock:
+            self.pending = value
 
     def _load_profiles(self):
         profiles = deepcopy(self._defaults)
@@ -171,14 +187,52 @@ class DesktopService:
             names.add(profile["name"])
         return profiles
 
-    def _read_zoom(self):
+    def _read_setting(self, key, default=None):
         try:
-            value = json.loads(self.settings_path.read_text(encoding="utf-8-sig")).get("ui_zoom_percent", 100)
-            if isinstance(value, int) and not isinstance(value, bool) and 75 <= value <= 200:
-                return value
+            return json.loads(self.settings_path.read_text(encoding="utf-8-sig")).get(key, default)
         except (OSError, ValueError, AttributeError):
+            return default
+
+    def _write_setting(self, key, value):
+        """Merge one preference into settings.json; callers hold the settings lock."""
+        try:
+            try:
+                settings = json.loads(self.settings_path.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError):
+                settings = {}
+            if not isinstance(settings, dict):
+                settings = {}
+            settings[key] = value
+            _atomic_text(self.settings_path, _json_text(settings))
+        except (OSError, ValueError):
+            # Preferences remain useful in memory even on a read-only portable drive.
             pass
+
+    def _read_zoom(self):
+        value = self._read_setting("ui_zoom_percent", 100)
+        if isinstance(value, int) and not isinstance(value, bool) and 75 <= value <= 200:
+            return value
         return 100
+
+    def window_geometry(self):
+        """Return the saved window bounds in logical pixels, or None when absent or invalid."""
+        value = self._read_setting("window")
+        if not isinstance(value, dict):
+            return None
+        bounds = [value.get(key) for key in ("x", "y", "width", "height")]
+        if not all(isinstance(item, int) and not isinstance(item, bool) and abs(item) <= 32767 for item in bounds):
+            return None
+        maximized = value.get("maximized", False)
+        if bounds[2] <= 0 or bounds[3] <= 0 or not isinstance(maximized, bool):
+            return None
+        return dict(zip(("x", "y", "width", "height"), bounds), maximized=maximized)
+
+    def save_window_geometry(self, geometry):
+        """Store the window's normal bounds and whether it was maximized."""
+        geometry = {key: int(geometry[key]) for key in ("x", "y", "width", "height")} | {
+            "maximized": bool(geometry.get("maximized", False))}
+        with self._settings:
+            self._write_setting("window", geometry)
 
     def _portable_error(self, error):
         if isinstance(error, OSError) and error.filename:
@@ -208,10 +262,11 @@ class DesktopService:
                                  "busy": self.busy, "identity": None if self.identity is None else {
                                      "name": self.identity.name, "firmware_version": self.identity.firmware_version},
                                  "summary": self.summary, "preview": preview, "status": self.status,
-                                 "can_import": not self.busy and self._import_project is not None,
+                                 "pending_save": self.pending,
                                  "can_write": not self.busy and self.plan is not None
                                      and self.transport is not None and self.identity is not None
-                                     and self.identity.firmware_version == 16}, "compiled": self.compiled})
+                                     and self.pending is None
+                                     and self.identity.firmware_version in WRITABLE_FIRMWARE}, "compiled": self.compiled})
 
     @property
     def is_busy(self):
@@ -242,7 +297,8 @@ class DesktopService:
                     return {"ok": False, "error": {"message": self._portable_error(error)}}
         allowed = {"new_project", "open_project", "save_project", "set_project", "export_messages",
                    "import_profile", "export_profile", "set_zoom", "controller_scan", "controller_read",
-                   "controller_preview", "controller_import", "controller_write", "controller_disconnect"}
+                   "controller_preview", "controller_write", "controller_disconnect",
+                   "controller_verify", "controller_restore"}
         if method not in allowed:
             return {"ok": False, "error": {"message": "Unknown desktop operation."}}
         if not self._commands.acquire(blocking=False):
@@ -264,7 +320,8 @@ class DesktopService:
         return Path(value) if value else None
 
     def _validated_project(self, project):
-        # Preserve optional native bank bytes and all schema metadata verbatim.
+        # Preserve all schema metadata verbatim, including the native bank bytes of
+        # projects that Stompilot 0.3.3 and earlier imported from the controller.
         project = deepcopy(project)
         _json_text(project)
         validate_config(project, self.profiles)
@@ -291,7 +348,7 @@ class DesktopService:
 
     def _require_project(self):
         if self.project is None:
-            raise ValidationError("Create, open, or import a project first.")
+            raise ValidationError("Create or open a project first.")
 
     def _new_project(self, _payload):
         self._replace_project(new_project(example=False), origin="New empty project")
@@ -344,9 +401,9 @@ class DesktopService:
                     lines.extend(result.summaries)
                     if result.sysex_hex:
                         lines.extend(["Type: SysEx (hex). Paste all lines into the same field:", result.sysex_hex])
-                    elif result.cc_rows:
-                        lines.extend(f"Channel {row['channel']} / Type CC / Data 1 {row['data1']} / Data 2 {row['data2']}"
-                                     for row in result.cc_rows)
+                    elif result.midi_rows:
+                        lines.extend(f"Channel {row['channel']} / Type {row['type']} / Data 1 {row['data1']} / Data 2 {row['data2']}"
+                                     for row in result.midi_rows)
                     else:
                         lines.append("No messages.")
                     lines.extend("Note: " + warning for warning in result.warnings)
@@ -395,18 +452,7 @@ class DesktopService:
             raise ValidationError("Zoom must be an integer from 75 to 200 percent.")
         with self._lock:
             self.zoom_percent = percent
-        try:
-            try:
-                settings = json.loads(self.settings_path.read_text(encoding="utf-8-sig"))
-            except (OSError, ValueError):
-                settings = {}
-            if not isinstance(settings, dict):
-                settings = {}
-            settings["ui_zoom_percent"] = percent
-            _atomic_text(self.settings_path, _json_text(settings))
-        except (OSError, ValueError):
-            # Zoom remains useful even on a read-only portable drive.
-            pass
+        self._write_setting("ui_zoom_percent", percent)
 
     def _progress(self, *parts):
         message = (f"Transferring configuration: {parts[0]:,} / {parts[1]:,} bytes"
@@ -422,15 +468,22 @@ class DesktopService:
             self.busy, self.status = True, message
         try:
             with self._io:
-                return operation()
+                try:
+                    return operation()
+                finally:
+                    # Retain the selected controller and its snapshot, not native
+                    # MIDI handles while idle. Closing an old WinMM/RtMidi input
+                    # after USB removal can crash the process outside Python.
+                    if self.transport is not None:
+                        self.transport.close()
         except Exception as error:
             with self._lock:
                 self._invalidate_preview()
-                self._import_project = None
                 self.image = None
                 self.status = self._portable_error(error)
             raise
         finally:
+            self._refresh_pending()
             with self._lock:
                 self.busy = False
 
@@ -446,26 +499,21 @@ class DesktopService:
         self._controller_operation("Looking for USB MIDI controllers…", operation)
 
     def _inspect(self, image, identity):
-        summary = config_summary(image)
-        imported, note = None, ""
-        if identity.firmware_version == 16:
-            try:
-                imported = import_controller_project(image, self.profiles)
-            except ValidationError as error:
-                note = str(error)
-        else:
-            note = (f"Editing and direct writing support Chocolate Plus firmware 16. This controller reports "
-                    f"firmware {identity.firmware_version}. Its configuration is available for inspection.")
+        summary = config_summary(image, self.profiles)
+        note = ""
+        writable = identity.firmware_version in WRITABLE_FIRMWARE
+        if not writable:
+            note = (f"This Chocolate Plus reports firmware {identity.firmware_version}. Stompilot writes only "
+                    "firmware 12 to 16, which share one configuration layout, so it shows this configuration "
+                    "but cannot change it.")
         legacy = legacy_sysex_banks(image)
         if legacy:
             warning = (f"{len(legacy)} SysEx bank(s) were written by an earlier Stompilot in a format the "
                        f"controller does not send: {'; '.join(legacy)}.")
-            if imported is not None:
-                warning += " Import as project, then preview and write it to rewrite them in the correct format."
-            elif identity.firmware_version == 16:
+            if writable:
                 warning += " Writing a project that assigns these switches rewrites them in the correct format."
             note = f"{warning} {note}".strip()
-        return summary, imported, note
+        return summary, note
 
     def _controller_read(self, payload):
         selected = next((device for device in self.devices if device.name == payload.get("device_name")), None)
@@ -477,48 +525,44 @@ class DesktopService:
             if created:
                 transport = self.transport_factory(selected.input_name, selected.output_name)
             try:
-                if created:
-                    transport.open()
+                transport.open()
                 identity = transport.query()
                 image = bytes(transport.read_config(progress_callback=self._progress))
-                summary, imported, note = self._inspect(image, identity)
+                transport.close()
+                summary, note = self._inspect(image, identity)
             except Exception:
                 if created:
                     transport.close()
-                with self._lock:
-                    self._import_project = None
                 raise
             with self._lock:
                 self.transport, self.identity, self.image = transport, identity, image
-                self.summary, self._import_project = summary, imported
+                self.summary = summary
                 self._invalidate_preview()
-                self.status = note or "Configuration read. Review its assignments before importing or writing."
+                self.status = self.pending["message"] if self.pending else note or "Configuration read. Reading does not change the controller."
         self._controller_operation("Reading controller configuration…", operation)
 
     def _require_controller(self):
+        self._refresh_pending()
+        if self.pending:
+            raise ValidationError("Finish verification or restore the previous save before writing another project.")
         if self.transport is None or self.image is None or self.identity is None:
             raise ValidationError("Connect and read the controller first.")
-        if self.identity.firmware_version != 16:
-            raise ValidationError("Editing and direct writing support Chocolate Plus firmware 16. This configuration is available for inspection.")
+        if self.identity.firmware_version not in WRITABLE_FIRMWARE:
+            raise ValidationError(
+                f"This Chocolate Plus reports firmware {self.identity.firmware_version}. Stompilot writes only "
+                "firmware 12 to 16, which share one configuration layout. To write this project, enter its MIDI "
+                "bytes in MidiSuite; Export MIDI lists them.")
 
     def _controller_preview(self, _payload):
         self._require_project()
         self._require_controller()
         plan = plan_project(self.project, self.profiles, self.image)
+        if self.identity.name == "FootCtrlPlus_013":
+            plan.warnings.append("This save checks permanent memory. A complete power-off and a final verification are required; keep the pedal in U and do not press its switches while writing.")
         fingerprint = _fingerprint(self.project, self.profiles)
         with self._lock:
             self.plan, self._reviewed_hash, self._reviewed_image = plan, fingerprint, self.image
             self.status = "Review the exact assignments before writing. An exact backup will be saved automatically."
-
-    def _controller_import(self, _payload):
-        self._require_controller()
-        if self._import_project is None:
-            raise ValidationError("This configuration is available for inspection but contains assignments that cannot be imported for editing.")
-        stamp = datetime.now().strftime("%H:%M:%S")
-        self._replace_project(self._import_project,
-                              origin=f"Chocolate Plus · {self.identity.name} · read at {stamp}")
-        with self._lock:
-            self.status = "Controller assignments loaded into a local working copy. Reading did not change the controller."
 
     def _controller_write(self, _payload):
         self._require_project()
@@ -529,37 +573,93 @@ class DesktopService:
         def operation():
             if _fingerprint(self.project, self.profiles) != reviewed_hash:
                 raise ValidationError("The project changed since the preview. Preview its current assignments before writing.")
+            self.transport.open()
             identity = self.transport.query()
-            if identity.firmware_version != 16 or identity.name != self.identity.name:
-                raise ValidationError("The connected controller identity changed. Read it again before writing; firmware 16 is required.")
+            if identity.firmware_version not in WRITABLE_FIRMWARE or identity.name != self.identity.name:
+                raise ValidationError("The connected controller identity changed. Read it again before writing; firmware 12 to 16 is required.")
             before = bytes(self.transport.read_config(progress_callback=self._progress))
             if before != reviewed_image:
-                with self._lock:
-                    self._import_project = None
                 raise ValidationError("The controller configuration changed since the preview. Read it again to review its current assignments before writing.")
             plan = plan_project(self.project, self.profiles, before)
             if plan.image != reviewed_plan.image:
                 raise ValidationError("The write plan changed since the preview. Preview it again before writing.")
             backup = save_backup(before, identity, self.backup_directory)
             self._progress(f"Backup saved: {backup.name}. Writing project…")
-            verified = bytes(self.transport.write_config(before, plan.image, progress_callback=self._progress))
+            options = {"backup_directory": self.backup_directory} if identity.name == "FootCtrlPlus_013" else {}
+            verified = bytes(self.transport.write_config(before, plan.image, progress_callback=self._progress, **options))
+            # Release the driver before publishing instructions to unplug USB.
+            self.transport.close()
             if verified != plan.image:
-                with self._lock:
-                    self._import_project = None
                 raise ValidationError("The controller did not retain the complete configuration. Keep the backup and read it again.")
-            summary, imported, _ = self._inspect(verified, identity)
+            summary, _ = self._inspect(verified, identity)
+            self._refresh_pending()
             with self._lock:
-                self.image, self.identity, self.summary, self._import_project = verified, identity, summary, imported
+                self.image, self.identity, self.summary = (None, identity, "") if self.pending else (verified, identity, summary)
                 self._invalidate_preview()
-                self.status = f"Project written and readback verified. Backup: {backup.name}"
+                if self.pending:
+                    self.transport = None
+                    self.status = self.pending["message"]
+                elif identity.name == "FootCtrlPlus_013":
+                    self.status = f"The project already matches the controller; no write was needed. Backup: {backup.name}."
+                else:
+                    self.status = (f"Project written and RAM readback verified. Backup: {backup.name}. "
+                                   "Permanent storage has not been verified for this firmware.")
         self._controller_operation("Reading a fresh backup before writing…", operation)
+
+    def _finish_save(self, *, restore):
+        self._refresh_pending()
+        if self.pending is None or self.pending["status"] == "invalid":
+            raise ValidationError("No valid unfinished save is available.")
+        def operation():
+            restored = self.pending["restored"] or restore
+            if self.transport is not None:
+                self.transport.close()
+            with self._lock:
+                self.transport = self.identity = self.image = None
+            devices = list(self.discovery())
+            if len(devices) != 1:
+                raise ValidationError("Connect the Chocolate Plus in U with its USB-C data cable, then try again.")
+            device = devices[0]
+            transport = self.transport_factory(device.input_name, device.output_name)
+            try:
+                transport.open()
+                with self._lock:
+                    self.transport, self.devices = transport, devices
+                method = transport.restore_config_backup if restore else transport.verify_config_restart
+                image = bytes(method(self.backup_directory, progress_callback=self._progress))
+                identity = transport.query()
+                transport.close()
+            except Exception:
+                transport.close()
+                with self._lock:
+                    self.transport = None
+                raise
+            self._refresh_pending()
+            with self._lock:
+                self.identity = identity
+                self._invalidate_preview()
+                if self.pending:
+                    self.transport = None
+                    self.image, self.summary = None, ""
+                    self.status = self.pending["message"]
+                else:
+                    self.image, self.summary = image, config_summary(image, self.profiles)
+                    self.status = ("Original configuration restored and verified after restart. Normal saving is active."
+                                   if restored else "Project verified in permanent memory after restart. Normal saving is active.")
+        self._controller_operation("Restoring the complete configuration backup…" if restore else "Checking the configuration after restart…", operation)
+
+    def _controller_verify(self, _payload):
+        self._finish_save(restore=False)
+
+    def _controller_restore(self, _payload):
+        self._finish_save(restore=True)
 
     def _controller_disconnect(self, _payload):
         def operation():
             if self.transport is not None:
                 self.transport.close()
             with self._lock:
-                self.transport = self.identity = self.image = self._import_project = None
+                self.transport = self.identity = self.image = None
                 self.summary = ""
                 self._invalidate_preview()
                 self.status = "Disconnected. The project remains available in Stompilot."

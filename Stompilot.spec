@@ -21,7 +21,7 @@ analysis = Analysis(
     datas=data_files,
     hiddenimports=[
         "mido.backends.rtmidi", "rtmidi", "rtmidi._rtmidi",
-        "core", "chocolate", "chocolate_transport", "desktop_service", "runtime_paths",
+        "core", "chocolate", "chocolate_transport", "chocolate_persistence", "desktop_service", "runtime_paths",
         "webview.platforms.winforms", "webview.platforms.edgechromium", "clr", "clr_loader",
     ],
     hookspath=[],
@@ -39,6 +39,7 @@ executable = EXE(
     analysis.datas,
     [],
     name="Stompilot",
+    icon=str(project_dir / "assets" / "stompilot.ico"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

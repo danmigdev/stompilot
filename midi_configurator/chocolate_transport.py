@@ -1,8 +1,8 @@
 """Chocolate Plus configuration over the native USB MIDI SysEx protocol.
 
-The message framing and bounded memory operations match MidiSuite's USB
-transport. Configuration writes are restricted to the controller's settings
-image; no firmware, bootloader, or arbitrary memory operation is exposed.
+The message framing matches MidiSuite's USB transport. The audited stock V13
+uses verified configuration-sector writes and requires a final restart check.
+No firmware, bootloader, or arbitrary memory operation is exposed publicly.
 """
 from __future__ import annotations
 
@@ -47,7 +47,18 @@ class ChocolateIdentity:
     raw_payload: bytes
 
 
+_BACKEND = None
+
+
+def use_backend(module) -> None:
+    """Use another mido-shaped MIDI backend, such as the Android app's; None restores mido."""
+    global _BACKEND
+    _BACKEND = module
+
+
 def _mido():
+    if _BACKEND is not None:
+        return _BACKEND
     try:
         import mido
         return mido
@@ -239,7 +250,25 @@ class UsbChocolate:
                 f"Chocolate Plus did not retain the settings at byte {address}. Keep the backup."
             )
 
-    def write_config(self, before: bytes, after: bytes, progress_callback: ProgressCallback | None = None) -> bytes:
+    def _persistence(self, backup_directory, progress_callback):
+        if __package__:
+            from .chocolate_persistence import VerifiedWriter
+            from .runtime_paths import data_directory
+        else:
+            from chocolate_persistence import VerifiedWriter
+            from runtime_paths import data_directory
+        return VerifiedWriter(self, backup_directory or data_directory() / ".backups", progress_callback)
+
+    def verify_config_restart(self, backup_directory, progress_callback=None) -> bytes:
+        with self._lock:
+            return self._persistence(backup_directory, progress_callback).verify_restart()
+
+    def restore_config_backup(self, backup_directory, progress_callback=None) -> bytes:
+        with self._lock:
+            return self._persistence(backup_directory, progress_callback).restore()
+
+    def write_config(self, before: bytes, after: bytes, progress_callback: ProgressCallback | None = None,
+                     *, backup_directory=None) -> bytes:
         """Apply a reviewed patch after checking its snapshot, then verify every byte.
 
         The caller must save a backup before this operation. Changes made by
@@ -249,6 +278,10 @@ class UsbChocolate:
         with self._lock:
             before, after = bytes(before), bytes(after)
             ranges = changed_ranges(before, after)
+            # V13's immediate partial writes lack an erase. Never fall back to
+            # those writes when build checks or verified saving fail.
+            if self.query().name == "FootCtrlPlus_013":
+                return self._persistence(backup_directory, progress_callback).write(before, after)
             settings, globals_ = [], []
             for address, data in ranges:
                 end = address + len(data)

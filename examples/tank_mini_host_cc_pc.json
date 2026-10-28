@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "name": "Tremolo, Boost and preset 2B with CC and Program Change",
+  "controller": {
+    "id": "chocolate_plus",
+    "max_sysex_bytes": 127
+  },
+  "pages": [
+    {
+      "name": "Page 1",
+      "switches": {
+        "A": {
+          "label": "Tremolo",
+          "mode": "single",
+          "states": [
+            {
+              "label": "Tremolo on/off",
+              "actions": [
+                {
+                  "device_id": "tank_mini_v09",
+                  "channel": 1,
+                  "block_id": "mod",
+                  "model_id": "2",
+                  "type": "toggle"
+                }
+              ]
+            }
+          ]
+        },
+        "B": {
+          "label": "Boost",
+          "mode": "single",
+          "states": [
+            {
+              "label": "Boost on/off",
+              "actions": [
+                {
+                  "device_id": "tank_mini_v09",
+                  "channel": 1,
+                  "block_id": "fx",
+                  "model_id": "1",
+                  "type": "toggle"
+                }
+              ]
+            }
+          ]
+        },
+        "C": {
+          "label": "Switch C",
+          "mode": "single",
+          "states": [
+            {
+              "label": "Sequence",
+              "actions": []
+            }
+          ]
+        },
+        "D": {
+          "label": "Switch D",
+          "mode": "single",
+          "states": [
+            {
+              "label": "Select 2B",
+              "actions": [
+                {
+                  "device_id": "tank_mini_v09",
+                  "channel": 1,
+                  "type": "select_preset",
+                  "value": 4
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

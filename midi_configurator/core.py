@@ -3,8 +3,10 @@
 Profiles are plain JSON data using schema_version 1. Protocol implementations
 are deliberately built in: a new profile cannot execute code or write arbitrary
 TANK memory. Profile-generated TANK commands affect the live patch or temporary
-preset-selection state; they never save or overwrite presets. Imported raw MIDI
-assignments preserve controller bytes without inferring a target device.
+preset-selection state; they never save or overwrite presets. Raw MIDI actions,
+from projects that Stompilot 0.3.3 and earlier imported from the controller,
+preserve its bytes without inferring a target device. Reading the controller
+names a command only when a profile's encoder produces exactly the same bytes.
 """
 from __future__ import annotations
 
@@ -24,7 +26,18 @@ LEGACY_MAX_SYSEX_BYTES = 128
 PROTOCOLS = ("tank_v09", "midi_cc")
 PROTOCOL_ENCODERS: dict[str, Callable[[dict, dict], CompiledAction]] = {}
 PROFILE_VALIDATORS: dict[str, Callable[[dict], None]] = {}
+PROTOCOL_DECODERS: dict[str, Callable[[bytes, dict], list[dict]]] = {}
 RELOAD_CURRENT_PRESET = "reload_current_preset"
+SELECT_PRESET = "select_preset"
+PRESET_VOLUME = "preset_volume"
+# Fields that would point a device-wide action at a block, a preset slot or raw memory.
+TARGET_FIELDS = frozenset({"block_id", "model_id", "param_id", "preset", "preset_id", "preset_index",
+                           "preset_number", "index", "address", "offset", "memory_type", "opcode",
+                           "length", "data"})
+# TANK V09 addresses for memory type 04.
+TANK_LIVE_PATCH = 0x10000000
+TANK_LIVE_PATCH_SIZE = 92
+TANK_PRESET_STATE = 0x20000001
 
 
 class ValidationError(ValueError):
@@ -100,6 +113,17 @@ def _validate_device_actions(profile: dict, path: str) -> None:
             status = evidence.get("status") if isinstance(evidence, dict) else evidence
             if status != "firmware_static_only":
                 raise ValidationError(f"{action_path}.evidence: Reload current preset requires firmware_static_only evidence")
+        elif action_id == SELECT_PRESET:
+            presets = _list(capability.get("presets"), f"{action_path}.presets")
+            if not 1 <= len(presets) <= 128:
+                raise ValidationError(f"{action_path}.presets: list 1 to 128 preset names, one per Program Change number")
+            for index, name in enumerate(presets):
+                _text(name, f"{action_path}.presets[{index}]")
+            if len(set(presets)) != len(presets):
+                raise ValidationError(f"{action_path}.presets: preset names must be unique")
+        elif action_id == PRESET_VOLUME:
+            if profile["protocol"] != "tank_v09":
+                raise ValidationError(f"{action_path}: Preset volume is only available for tank_v09 profiles")
         elif profile["protocol"] in PROTOCOLS:
             raise ValidationError(f"{action_path}: unsupported device action")
 
@@ -143,6 +167,11 @@ def validate_profile(profile: dict) -> dict:
             _integer(enable.get("on", 127), f"{path}.enable.on", 0, 127)
             _integer(enable.get("off", 0), f"{path}.enable.off", 0, 127)
             _evidence(enable.get("evidence"), f"{path}.enable.evidence")
+        if "toggle" in block:
+            toggle = _object(block["toggle"], f"{path}.toggle")
+            _integer(toggle.get("cc"), f"{path}.toggle.cc", 0, 127)
+            _integer(toggle.get("value", 0), f"{path}.toggle.value", 0, 127)
+            _evidence(toggle.get("evidence"), f"{path}.toggle.evidence")
         models = _list(block.get("models", []), f"{path}.models")
         _unique(models, f"{path}.models")
         for model in models:
@@ -236,10 +265,10 @@ def parse_packet(data: bytes) -> dict:
 
 
 def tank_live_write(offset: int, data: bytes) -> bytes:
-    _integer(offset, "live patch offset", 0, 91)
-    if not data or offset + len(data) > 92:
-        raise ValidationError("Write exceeds the 92-byte TANK live patch")
-    query = b"\x04" + (0x10000000 + offset).to_bytes(4, "little")
+    _integer(offset, "live patch offset", 0, TANK_LIVE_PATCH_SIZE - 1)
+    if not data or offset + len(data) > TANK_LIVE_PATCH_SIZE:
+        raise ValidationError(f"Write exceeds the {TANK_LIVE_PATCH_SIZE}-byte TANK live patch")
+    query = b"\x04" + (TANK_LIVE_PATCH + offset).to_bytes(4, "little")
     query += len(data).to_bytes(3, "little") + data
     return packet(0x22, query)
 
@@ -294,7 +323,7 @@ class CompiledAction:
 class CompiledState:
     messages: tuple[bytes, ...]
     sysex_hex: str
-    cc_rows: tuple[dict, ...]
+    midi_rows: tuple[dict, ...]
     summaries: tuple[str, ...]
     evidence_status: str
     warnings: tuple[str, ...] = ()
@@ -313,7 +342,7 @@ class CompiledState:
 
     def to_dict(self) -> dict:
         return {"messages_hex": [format_hex(msg) for msg in self.messages],
-                "sysex_hex": self.sysex_hex, "cc_rows": list(self.cc_rows),
+                "sysex_hex": self.sysex_hex, "midi_rows": list(self.midi_rows),
                 "summaries": list(self.summaries), "summary": self.summary,
                 "evidence_status": self.evidence_status,
                 "warnings": list(self.warnings), "byte_count": self.byte_count}
@@ -354,7 +383,7 @@ def _compile_reload_current_preset(action: dict, profile: dict) -> CompiledActio
     # Fixed stock V09 operation: invalidate the cached previous preset index.
     # The control loop then reloads the saved record for the unchanged current
     # index. No arbitrary address or preset number is accepted from JSON.
-    payload = b"\x04" + (0x20000001).to_bytes(4, "little") + b"\x01\x00\x00\xff"
+    payload = b"\x04" + TANK_PRESET_STATE.to_bytes(4, "little") + b"\x01\x00\x00\xff"
     warnings = [
         "Experimental: supported by static analysis of stock TANK Mini firmware V09; not yet verified on the physical TANK Mini or through the Chocolate Plus.",
         "Restores the whole saved preset, including other effects' ON/OFF states, and discards all temporary edits.",
@@ -366,19 +395,64 @@ def _compile_reload_current_preset(action: dict, profile: dict) -> CompiledActio
     return CompiledAction((packet(0x22, payload),), summary, "firmware_static_only", _deduplicate(warnings))
 
 
+def _capability(profile: dict, action_id: str, label: str) -> dict:
+    capability = next((item for item in profile.get("device_actions", []) if item["id"] == action_id), None)
+    if capability is None:
+        raise ValidationError(f"{label} is unavailable in this profile; the device capability must be declared explicitly")
+    return capability
+
+
+def _device_action(action: dict, profile: dict, action_id: str, label: str) -> tuple[dict, int, list[str]]:
+    """Check a device-wide action; return its capability, channel and the profile's warnings."""
+    capability = _capability(profile, action_id, label)
+    extra = sorted(TARGET_FIELDS.intersection(action))
+    if extra:
+        raise ValidationError(f"{label} does not accept target or address fields: {', '.join(extra)}")
+    channel = _integer(action.get("channel", profile.get("channel", 1)), "action.channel", 1, 16)
+    warnings = [warning for warning in capability.get("warnings", []) if isinstance(warning, str)]
+    if _status(capability) in ("unverified", "unknown", "pending"):
+        warnings.insert(0, "Command has not yet been verified on the device: check the profile and test the values on your firmware.")
+    return capability, channel, warnings
+
+
+def _compile_select_preset(action: dict, profile: dict) -> CompiledAction:
+    capability, channel, warnings = _device_action(action, profile, SELECT_PRESET, "Select preset")
+    presets = capability["presets"]
+    value = _integer(action.get("value"), "action.value", 0, len(presets) - 1)
+    warnings.insert(0, "Loads the saved preset; unsaved changes on the device are discarded.")
+    # A MIDI Program Change: the Chocolate Plus stores it as a MIDI row, not as SysEx.
+    return CompiledAction((bytes([0xC0 + channel - 1, value]),), f"{profile['name']}: {capability['label']} {presets[value]}",
+                          _status(capability), _deduplicate(warnings))
+
+
+def _compile_preset_volume(action: dict, profile: dict) -> CompiledAction:
+    if profile["protocol"] != "tank_v09":
+        raise ValidationError("Preset volume is only available for tank_v09 profiles")
+    capability, _, warnings = _device_action(action, profile, PRESET_VOLUME, "Preset volume")
+    value = _integer(action.get("value"), "action.value", 0, 100)
+    warnings.insert(0, "Sets the volume of the preset that is playing; selecting or reloading a preset restores its saved volume. Nothing is saved.")
+    # Live patch bytes 0-1 hold the preset's level, a signed 16-bit value from 0 to 100.
+    return CompiledAction((tank_live_write(0, value.to_bytes(2, "little")),),
+                          f"{profile['name']}: {capability['label']} = {value}", _status(capability), _deduplicate(warnings))
+
+
 def _compile_builtin_action(action: dict, profile: dict) -> CompiledAction:
     action_type = action.get("type")
     if action_type == RELOAD_CURRENT_PRESET:
         return _compile_reload_current_preset(action, profile)
-    if action_type not in ("enable", "model", "parameter"):
-        raise ValidationError("action.type: use enable, model, parameter or a supported device action")
+    if action_type == SELECT_PRESET:
+        return _compile_select_preset(action, profile)
+    if action_type == PRESET_VOLUME:
+        return _compile_preset_volume(action, profile)
+    if action_type not in ("enable", "toggle", "model", "parameter"):
+        raise ValidationError("action.type: use enable, toggle, model, parameter or a supported device action")
     block = _find(profile["blocks"], action.get("block_id"), "action.block_id")
     channel = _integer(action.get("channel", profile.get("channel", 1)), "action.channel", 1, 16)
     tank = profile["protocol"] == "tank_v09"
     warnings: list[str] = []
     model: dict = {}
     parameter: dict = {}
-    if action_type != "enable" or "model_id" in action:
+    if action_type not in ("enable", "toggle") or "model_id" in action:
         model = _find(block.get("models", []), action.get("model_id"), "action.model_id")
     prefix = f"{profile['name']} · {block['label']}"
     if action_type == "enable":
@@ -396,6 +470,17 @@ def _compile_builtin_action(action: dict, profile: dict) -> CompiledAction:
             value = enable.get("on", 127) if value else enable.get("off", 0)
             message = bytes([0xB0 + channel - 1, enable["cc"], value])
             evidence_objects = (profile, block, enable)
+    elif action_type == "toggle":
+        # A CC that flips the block from its current state, so the result depends on that state.
+        toggle = block.get("toggle")
+        if toggle is None:
+            raise ValidationError(f"{prefix}: toggle command is unavailable in this profile")
+        message = bytes([0xB0 + channel - 1, toggle["cc"], toggle.get("value", 0)])
+        summary = f"{prefix}: toggle ON/OFF (CC {toggle['cc']})"
+        warnings.append(f"Switches {block['label']} off if it is on and on if it is off; it does not set a fixed state.")
+        if model:
+            warnings.append(f"The preset must already have {block['label']} = {model['label']} selected; this message only switches it on or off.")
+        evidence_objects = (profile, block, toggle)
     elif action_type == "model":
         summary = f"{prefix}: model {model['label']}"
         if tank:
@@ -431,14 +516,107 @@ def _compile_builtin_action(action: dict, profile: dict) -> CompiledAction:
     return CompiledAction((message,), summary, status, _deduplicate(warnings))
 
 
+def _decode_tank_v09(message: bytes, profile: dict) -> list[dict]:
+    """Propose the actions behind one live-patch write or the preset reload.
+
+    A parameter write stores the block and parameter slot, not the model
+    selected in the preset, so every model with that slot is proposed.
+    """
+    try:
+        decoded = parse_packet(message)
+    except ValidationError:
+        return []
+    payload = decoded["payload"]
+    if decoded["opcode"] != 0x22 or len(payload) < 9 or payload[0] != 4:
+        return []
+    address = int.from_bytes(payload[1:5], "little")
+    data = payload[8:]
+    if int.from_bytes(payload[5:8], "little") != len(data):
+        return []
+    if address == TANK_PRESET_STATE:
+        return [{"type": RELOAD_CURRENT_PRESET}]
+    offset = address - TANK_LIVE_PATCH
+    if offset == 0 and len(data) == 2:
+        return [{"type": PRESET_VOLUME, "value": int.from_bytes(data, "little")}]
+    blocks = {block["wire_id"]: block for block in profile["blocks"]}
+    if len(data) == 1 and 8 <= offset < 14 and offset - 8 in blocks:
+        return [{"type": "enable", "block_id": blocks[offset - 8]["id"], "value": data[0] == 1}]
+    if len(data) == 1 and 14 <= offset < 20 and offset - 14 in blocks:
+        block = blocks[offset - 14]
+        return [{"type": "model", "block_id": block["id"], "model_id": model["id"]}
+                for model in block.get("models", []) if model["wire_value"] == data[0]]
+    if len(data) == 2 and 20 <= offset < TANK_LIVE_PATCH_SIZE and offset % 2 == 0:
+        wire_id, index = divmod((offset - 20) // 2, 6)
+        block = blocks.get(wire_id, {})
+        return [{"type": "parameter", "block_id": block["id"], "model_id": model["id"],
+                 "param_id": parameter["id"], "value": int.from_bytes(data, "little")}
+                for model in block.get("models", []) for parameter in model.get("parameters", [])
+                if parameter["index"] == index]
+    return []
+
+
+def decode_message(message: bytes, profiles: Mapping[str, dict]) -> list[dict]:
+    """Return the actions of the first profile that encodes exactly this message.
+
+    Each proposed action is compiled and kept only if it produces the same
+    bytes, so a decoded action never changes what the controller sends. More
+    than one action means the bytes do not say which one was meant, such as
+    the model behind a TANK parameter write. An empty list means that no
+    installed profile produces this message.
+    """
+    for device_id, profile in profiles.items():
+        decoder = PROTOCOL_DECODERS.get(profile.get("protocol"))
+        if decoder is None:
+            continue
+        try:
+            profile = validate_profile(profile)
+            proposals = decoder(message, profile)
+        except ValidationError:
+            continue
+        encoder = PROTOCOL_ENCODERS[profile["protocol"]]
+        actions = []
+        for proposal in proposals:
+            action = {"device_id": device_id, **proposal}
+            try:
+                if encoder(action, profile).messages == (message,):
+                    actions.append(action)
+            except ValidationError:
+                continue
+        if actions:
+            return actions
+    return []
+
+
+def describe_decoded(actions: list[dict], profiles: Mapping[str, dict]) -> str:
+    """Describe decode_message's result without naming a model the bytes do not store."""
+    first = actions[0]
+    if any(action.get("type") != "parameter" or action["block_id"] != first["block_id"] for action in actions):
+        return compile_action(first, profiles).summary
+    profile = profiles[first["device_id"]]
+    block = _find(profile["blocks"], first["block_id"], "action.block_id")
+    labels = []
+    for action in actions:
+        model = _find(block.get("models", []), action["model_id"], "action.model_id")
+        labels.append(_find(model.get("parameters", []), action["param_id"], "action.param_id")["label"])
+    labels = list(_deduplicate(labels))
+    if len(labels) == 1:
+        return f"{profile['name']} · {block['label']} / {labels[0]} = {first['value']}"
+    names = ", ".join(labels[:-1]) + f" or {labels[-1]}"
+    return f"{profile['name']} · {block['label']} / {names} = {first['value']} (depends on the preset's model)"
+
+
 def register_protocol(name: str, encoder: Callable[[dict, dict], CompiledAction],
-                      validator: Callable[[dict], None] | None = None, *, replace: bool = False) -> None:
+                      validator: Callable[[dict], None] | None = None, *, replace: bool = False,
+                      decoder: Callable[[bytes, dict], list[dict]] | None = None) -> None:
     """Register trusted Python code explicitly; JSON profiles never call this.
 
     An encoder accepts (action, validated_profile) and returns CompiledAction.
     A new protocol can therefore serve the existing visual editor without
     changing the editor. Built-in profiles use the shared declarative schema;
     custom protocols supply their own additional validation when necessary.
+    An optional decoder accepts (message, validated_profile) and proposes
+    actions without device_id; decode_message keeps only those that compile
+    to exactly that message.
     """
     _text(name, "protocol")
     if not name.isidentifier() or not callable(encoder):
@@ -447,11 +625,17 @@ def register_protocol(name: str, encoder: Callable[[dict, dict], CompiledAction]
         raise ValidationError(f"Protocol is already registered: {name}")
     if validator is not None and not callable(validator):
         raise ValidationError("The protocol validator must be a function")
+    if decoder is not None and not callable(decoder):
+        raise ValidationError("The protocol decoder must be a function")
     PROTOCOL_ENCODERS[name] = encoder
     if validator is not None:
         PROFILE_VALIDATORS[name] = validator
     else:
         PROFILE_VALIDATORS.pop(name, None)
+    if decoder is not None:
+        PROTOCOL_DECODERS[name] = decoder
+    else:
+        PROTOCOL_DECODERS.pop(name, None)
 
 
 def _compile_raw_midi(action: dict) -> CompiledAction:
@@ -498,16 +682,18 @@ def compile_action(action: dict, profiles: Mapping[str, dict]) -> CompiledAction
             continue
         if len(message) == 3 and (message[0] & 0xF0) == 0xB0 and all(byte <= 127 for byte in message[1:]):
             continue
-        raise ValidationError("The encoder generated an invalid MIDI SysEx/CC message")
+        if len(message) == 2 and (message[0] & 0xF0) == 0xC0 and message[1] <= 127:
+            continue
+        raise ValidationError("The encoder generated an invalid MIDI SysEx, CC or Program Change message")
     return result
 
 
-register_protocol("tank_v09", _compile_builtin_action)
+register_protocol("tank_v09", _compile_builtin_action, decoder=_decode_tank_v09)
 register_protocol("midi_cc", _compile_builtin_action)
 
 
 def compile_state(state: dict, profiles: Mapping[str, dict], max_sysex_bytes: int = MAX_SYSEX_BYTES) -> CompiledState:
-    """Build a MidiSuite bank; CC rows and SysEx cannot share a bank here."""
+    """Build a MidiSuite bank; MIDI rows (CC, Program Change) and SysEx cannot share a bank here."""
     _object(state, "state")
     _integer(max_sysex_bytes, "SysEx limit", 1, MAX_SYSEX_BYTES)
     actions = _list(state.get("actions", []), "state.actions")
@@ -519,9 +705,9 @@ def compile_state(state: dict, profiles: Mapping[str, dict], max_sysex_bytes: in
     compiled = [compile_action(action, profiles) for action in actions]
     messages = tuple(message for action in compiled for message in action.messages)
     sysex_messages = [msg for msg in messages if msg.startswith(b"\xf0")]
-    cc_messages = [msg for msg in messages if len(msg) == 3 and (msg[0] & 0xF0) == 0xB0]
-    if sysex_messages and cc_messages:
-        raise ValidationError("MidiSuite: a bank cannot mix CC and SysEx. Separate the commands or use explicit ON/OFF SysEx for TANK.")
+    row_messages = [msg for msg in messages if not msg.startswith(b"\xf0")]
+    if sysex_messages and row_messages:
+        raise ValidationError("MidiSuite: a bank cannot mix CC or Program Change with SysEx. Put them in separate states or switches, or use explicit ON/OFF SysEx for TANK.")
     sysex_bytes = sum(map(len, sysex_messages))
     if sysex_bytes > max_sysex_bytes:
         raise ValidationError(f"MidiSuite: the bank contains {sysex_bytes} SysEx bytes; the limit is {max_sysex_bytes}. Split the actions across multiple states or switches.")
@@ -535,9 +721,10 @@ def compile_state(state: dict, profiles: Mapping[str, dict], max_sysex_bytes: in
         if any(later.get("device_id") == action["device_id"] and later.get("block_id") == action["block_id"]
                and later.get("type") == "parameter" for later in actions[index + 1:]):
             raise ValidationError("TANK: changing the model and parameters of the same block in one bank may overlap with asynchronous loading. Select the model in the preset or use a separate state.")
-    cc_rows = tuple({"channel": (message[0] & 15) + 1, "type": "CC", "data1": message[1],
-                     "data2": message[2], "hex": format_hex(message)} for message in cc_messages)
-    return CompiledState(messages, "\n".join(format_hex(msg) for msg in sysex_messages), cc_rows,
+    midi_rows = tuple({"channel": (message[0] & 15) + 1, "type": "CC" if len(message) == 3 else "PC",
+                       "data1": message[1], "data2": message[2] if len(message) == 3 else 0,
+                       "hex": format_hex(message)} for message in row_messages)
+    return CompiledState(messages, "\n".join(format_hex(msg) for msg in sysex_messages), midi_rows,
                          tuple(action.summary for action in compiled),
                          _combined_status(action.evidence_status for action in compiled),
                          _deduplicate(warnings))

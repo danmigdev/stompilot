@@ -23,8 +23,33 @@ else:
     from runtime_paths import resource_dir
 
 
+# The smoke test starts from these saved preferences and checks that they come back.
+SMOKE_SETTINGS = {"ui_zoom_percent": 150,
+                  "window": {"x": 40, "y": 40, "width": 900, "height": 640, "maximized": False}}
+SMOKE_BOUNDS = tuple(SMOKE_SETTINGS["window"][key] for key in ("x", "y", "width", "height"))
+
+
 def frontend_directory():
     return resource_dir().parent / "frontend" / "build"
+
+
+def window_placement(saved, screens, default_size, min_size):
+    """Reuse saved bounds only when their title bar lands on a connected screen.
+
+    Coordinates are logical pixels, as pywebview reports them. Otherwise the
+    window opens centered at its default size.
+    """
+    placement = {"x": None, "y": None, "width": default_size[0], "height": default_size[1], "maximized": False}
+    if saved is None:
+        return placement
+    for screen in screens:
+        overlap = min(saved["x"] + saved["width"], screen.x + screen.width) - max(saved["x"], screen.x)
+        # Windows draws invisible resize borders, so a window snapped to the top can start slightly above it.
+        if overlap >= 100 and screen.y - 16 <= saved["y"] <= screen.y + screen.height - 40:
+            return {"x": saved["x"], "y": saved["y"], "maximized": saved["maximized"],
+                    "width": min(max(saved["width"], min_size[0]), screen.width),
+                    "height": min(max(saved["height"], min_size[1]), screen.height)}
+    return placement
 
 
 class DesktopBridge:
@@ -65,8 +90,25 @@ class DesktopBridge:
                 pass
         threading.Thread(target=deliver, daemon=True).start()
 
+    def _remember_window(self):
+        """Save the normal bounds, also when maximized; pywebview calls closing on the UI thread."""
+        try:
+            from System.Windows.Forms import FormWindowState
+            form = self._window.native
+            state = form.WindowState
+            bounds = form.Bounds if state == FormWindowState.Normal else form.RestoreBounds
+            scale = form._scale
+            self._service.save_window_geometry({
+                "x": round(bounds.X / scale), "y": round(bounds.Y / scale),
+                "width": round(bounds.Width / scale), "height": round(bounds.Height / scale),
+                "maximized": state == FormWindowState.Maximized})
+        except Exception:
+            # Closing never depends on remembering the window.
+            pass
+
     def _on_closing(self):
         if self._allow_close:
+            self._remember_window()
             return True
         if self._service.is_busy:
             self._dispatch("stompilot-notice", {"message": "Wait for the controller operation to finish before closing."})
@@ -74,7 +116,10 @@ class DesktopBridge:
         if self._service.snapshot()["dirty"]:
             self._dispatch("stompilot-close-request")
             return False
-        return self._service.close()
+        closed = self._service.close()
+        if closed:
+            self._remember_window()
+        return closed
 
     def _pick_file(self, kind, suggested_name="", file_types=()):
         import webview
@@ -134,25 +179,31 @@ def _smoke(window, bridge):
     _wait_js(window, "!!document.querySelector('[data-testid=\"startup-new\"]')")
     initial = bridge._service.snapshot()
     assert initial["project"] is None and not initial["controller"]["connected"]
+    _wait_js(window, "document.querySelector('[data-testid=\"zoom-value\"]').textContent.includes('150%')")
+    bounds = (window.x, window.y, window.width, window.height)
+    # Display scaling rounds logical pixels.
+    assert all(abs(actual - saved) <= 2 for actual, saved in zip(bounds, SMOKE_BOUNDS)), \
+        f"The saved window bounds were not restored: {bounds}"
     window.evaluate_js("document.querySelector('[data-testid=\"startup-new\"]').click()")
     _wait_js(window, "!!document.querySelector('[data-testid=\"add-action\"]')")
     baseline = bridge._service.snapshot()
     assert baseline["project"]["name"] == "New project" and not baseline["dirty"]
     font_before = window.evaluate_js("parseFloat(getComputedStyle(document.querySelector('[data-testid=\"zoom-value\"]')).fontSize)")
     window.evaluate_js("document.querySelector('[data-testid=\"zoom-in\"]').click()")
-    _wait_js(window, "document.querySelector('[data-testid=\"zoom-value\"]').textContent.includes('125%')")
+    _wait_js(window, "document.querySelector('[data-testid=\"zoom-value\"]').textContent.includes('175%')")
     deadline = time.monotonic() + 5
-    while bridge._service.snapshot()["zoom_percent"] != 125 and time.monotonic() < deadline:
+    while bridge._service.snapshot()["zoom_percent"] != 175 and time.monotonic() < deadline:
         time.sleep(0.05)
     after = bridge._service.snapshot()
-    assert after["zoom_percent"] == 125 and after["project"] == baseline["project"] and not after["dirty"]
+    assert after["zoom_percent"] == 175 and after["project"] == baseline["project"] and not after["dirty"]
     font_after = window.evaluate_js("parseFloat(getComputedStyle(document.querySelector('[data-testid=\"zoom-value\"]')).fontSize)")
     assert font_after > font_before
     window.evaluate_js("document.querySelector('[data-testid=\"add-action\"]').click()")
     _wait_js(window, "!!document.querySelector('[data-testid=\"action-editor\"]')")
     assert bridge._service.snapshot()["project"] == baseline["project"]
-    return {"ok": True, "checks": ["Svelte assets", "Python bridge", "explicit startup",
-                                    "empty project", "global text zoom", "action editor", "no MIDI I/O"]}
+    return {"ok": True, "checks": ["Svelte assets", "Python bridge", "explicit startup", "saved zoom",
+                                    "saved window bounds", "empty project", "global text zoom",
+                                    "action editor", "no MIDI I/O"]}
 
 
 def main():
@@ -165,6 +216,8 @@ def main():
     temporary = TemporaryDirectory() if args.smoke_test or args.screenshot else None
     outcome = {"ok": True}
     try:
+        if args.smoke_test:
+            (Path(temporary.name) / "settings.json").write_text(json.dumps(SMOKE_SETTINGS), encoding="utf-8")
         service = (DesktopService(data_directory=temporary.name, discovery=lambda: [])
                    if temporary else DesktopService())
         entry = frontend_directory() / "index.html"
@@ -179,11 +232,13 @@ def main():
         bridge = DesktopBridge(service)
         if not temporary:
             service.dialog = bridge._pick_file
-        screen = webview.screens[0]
-        width, height = min(1280, max(320, screen.width - 60)), min(860, max(240, screen.height - 100))
+        screens = webview.screens
+        width, height = min(1280, max(320, screens[0].width - 60)), min(860, max(240, screens[0].height - 100))
+        min_size = (min(620, width), min(440, height))
+        placement = window_placement(service.window_geometry(), screens, (width, height), min_size)
         window = webview.create_window(
-            "Stompilot", str(entry), js_api=bridge, width=width, height=height,
-            min_size=(min(620, width), min(440, height)), background_color="#10161f", text_select=True)
+            "Stompilot", str(entry), js_api=bridge, min_size=min_size,
+            background_color="#10161f", text_select=True, **placement)
         bridge._window = window
         window.events.closing += bridge._on_closing
         def automate():
@@ -206,6 +261,13 @@ def main():
         webview.start(automate, gui="edgechromium" if os.name == "nt" else None,
                       private_mode=True, http_server=True)
         service.close()
+        if args.smoke_test and outcome["ok"]:
+            saved = service.window_geometry()
+            if saved is None or any(abs(saved[key] - value) > 2 for key, value in
+                                    zip(("x", "y", "width", "height"), SMOKE_BOUNDS)):
+                outcome.update({"ok": False, "error": f"The window bounds were not saved on close: {saved}"})
+            else:
+                outcome["checks"].append("window bounds saved on close")
         if args.report:
             args.report.parent.mkdir(parents=True, exist_ok=True)
             args.report.write_text(json.dumps(outcome, indent=2) + "\n", encoding="utf-8")

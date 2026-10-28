@@ -7,14 +7,14 @@ import unittest
 from .chocolate import (
     ADVANCED_MODE, ADVANCED_OFFSET, BANK_A_ROWS, BANK_A_SYSEX, BANK_B_ROWS,
     BANK_B_SYSEX, CONFIG_SIZE, CURRENT_PAGE_OFFSET, PAGE_COUNT_OFFSET,
-    SWITCH_SIZE, SYSEX_ROW, changed_ranges, config_summary, decode_config,
-    import_controller_project, legacy_sysex_banks, plan_project, switch_offset,
+    SWITCH_SIZE, SYSEX_ROW, _decode_bank, changed_ranges, config_summary, decode_config,
+    legacy_sysex_banks, plan_project, switch_offset,
 )
-from .core import ValidationError, compile_config, load_config, load_profiles, save_config
+from .core import ValidationError, load_config, load_profiles, save_config
 from .project import new_project
 from .test_core import (
-    FX_OFF, FX_ON, REV_MIX_10, REV_MIX_5, cc_fixture, config_fixture,
-    enabled, tank_fixture,
+    FX_OFF, FX_ON, RELOAD_CURRENT, REV_MIX_10, REV_MIX_5, cc_fixture, config_fixture,
+    enabled, mix, reload_profile_fixture, tank_fixture,
 )
 
 
@@ -65,6 +65,54 @@ def readable_fixture(page_count=1):
     image[offset + BANK_A_ROWS:offset + BANK_A_ROWS + 80] = rows
     image[offset + BANK_A_SYSEX:offset + BANK_A_SYSEX + 128] = bytes([0xA6]) * 128
     return bytes(image)
+
+
+def with_sysex_banks(image, switch_id, *vectors):
+    """Store one SysEx bank per vector on page 1; two vectors make the switch alternating."""
+    image = bytearray(image)
+    start = switch_offset(0, switch_id)
+    image[start] = 0 if len(vectors) == 1 else 1
+    for (rows, sysex), vector in zip(((BANK_A_ROWS, BANK_A_SYSEX), (BANK_B_ROWS, BANK_B_SYSEX)), vectors):
+        image[start + rows:start + rows + 80] = SYSEX_ROW + bytes(75)
+        image[start + sysex:start + sysex + 128] = stored(vector)
+    return bytes(image)
+
+
+def raw(message_hex):
+    return {"type": "raw_midi", "message_hex": message_hex}
+
+
+def earlier_import(image, page_count=1):
+    """A project as Stompilot 0.3.3 and earlier imported it: raw actions plus native bank bytes."""
+    pages = []
+    for page_index in range(page_count):
+        switches = {}
+        for switch_id in "ABCD":
+            start = switch_offset(page_index, switch_id)
+            mode = image[start]
+            states = []
+            for bank, rows, sysex in (("A", BANK_A_ROWS, BANK_A_SYSEX), ("B", BANK_B_ROWS, BANK_B_SYSEX))[:mode + 1]:
+                rows = image[start + rows:start + rows + 80]
+                sysex = image[start + sysex:start + sysex + 128]
+                messages = _decode_bank(rows, sysex, f"Page {page_index + 1}, switch {switch_id}, bank {bank}")
+                states.append({"label": f"Bank {bank}",
+                               "actions": [raw(message.hex(" ").upper()) for message in messages],
+                               "native_bank": {"rows_hex": rows.hex(" ").upper(), "sysex_hex": sysex.hex(" ").upper()}})
+            switches[switch_id] = {"label": f"Switch {switch_id}", "mode": ("single", "alternating")[mode],
+                                   "states": states}
+        pages.append({"name": f"Page {page_index + 1}", "switches": switches})
+    return {"schema_version": 1, "name": "Chocolate Plus configuration",
+            "controller": {"id": "chocolate_plus", "max_sysex_bytes": 127}, "pages": pages}
+
+
+def two_reverb_profile():
+    """REV Spring comes first and uses slot 1 for Level, where Hall has Mix."""
+    profile = reload_profile_fixture()
+    rev = next(block for block in profile["blocks"] if block["id"] == "rev")
+    rev["models"].insert(0, {"id": "spring", "label": "Spring", "wire_value": 3,
+                             "parameters": [{"id": "level", "label": "Level", "index": 1,
+                                             "min": 0, "max": 100, "step": 1}]})
+    return profile
 
 
 def legacy_fixture():
@@ -227,7 +275,7 @@ class ChocolateCodecTests(unittest.TestCase):
         self.assertEqual(plan.image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128], bytes(128))
         self.assertIn("ch 16 CC 26 = 127", config_summary(plan.image))
         project["pages"][0]["switches"]["C"]["states"][0]["actions"].append(action)
-        with self.assertRaisesRegex(ValidationError, "at most 16 CC rows"):
+        with self.assertRaisesRegex(ValidationError, "at most 16 MIDI rows"):
             plan_project(project, self.profiles, self.original)
 
     def test_eight_pages_use_zero_based_page_count_and_ninth_is_rejected(self):
@@ -282,164 +330,63 @@ class ChocolateCodecTests(unittest.TestCase):
         self.assertNotIn("Page 2", summary)
 
 
-class ChocolateImportTests(unittest.TestCase):
+class ChocolateReadTests(unittest.TestCase):
+    """Reading only describes the controller; it never becomes a project."""
+
     def setUp(self):
         self.image = readable_fixture()
 
-    def test_cc_import_keeps_channels_order_and_neutral_labels_without_profiles(self):
-        project = import_controller_project(self.image, {})
-        self.assertEqual(project["name"], "Chocolate Plus configuration")
-        self.assertEqual(len(project["pages"]), 1)
-        switch = project["pages"][0]["switches"]["A"]
-        self.assertEqual((switch["label"], switch["mode"]), ("Switch A", "single"))
-        state = switch["states"][0]
-        self.assertEqual(state["label"], "Bank A")
-        self.assertEqual(state["actions"], [
-            {"type": "raw_midi", "message_hex": "BF 40 7F"},
-            {"type": "raw_midi", "message_hex": "B1 02 00"},
-        ])
-        compiled = compile_config(project, {})
-        self.assertEqual(compiled["pages"][0]["switches"]["A"]["states"][0]["messages_hex"],
-                         ["BF 40 7F", "B1 02 00"])
-        self.assertEqual(project["pages"][0]["switches"]["D"]["states"][0]["actions"], [])
+    def test_read_summary_lists_cc_rows_and_names_tank_commands_only_with_profiles(self):
+        profiles = {"tank": reload_profile_fixture()}
+        image = with_sysex_banks(self.image, "B", FX_ON + " " + REV_MIX_10, "F0 41 01 02 7F F7")
+        image = with_sysex_banks(image, "C", RELOAD_CURRENT)
+        summary = config_summary(image, profiles)
+        self.assertIn("  A: single; A: 2 CC row(s): ch 16 CC 64 = 127; ch 2 CC 2 = 0\n"
+                      "  B: alternating; A: SysEx, 43 bytes, 2 message(s); B: SysEx, 6 bytes, 1 message(s)\n"
+                      "    A: TANK Mini V09 · FX: ON\n"
+                      "    A: TANK Mini V09 · REV / Mix = 10\n"
+                      "    B: SysEx (6 bytes) that no installed device profile sends\n"
+                      "  C: single; A: SysEx, 21 bytes, 1 message(s)\n"
+                      "    A: TANK Mini V09: Reload current preset (experimental)\n", summary)
+        self.assertIn("not the device they are for", summary)
+        plain = config_summary(image)
+        self.assertNotIn("TANK Mini", plain)
+        self.assertNotIn("not the device they are for", plain)
 
-    def test_unchanged_import_preserves_every_byte_including_row_gaps_and_unused_buffers(self):
-        project = import_controller_project(self.image, {})
-        plan = plan_project(project, {}, self.image)
-        self.assertEqual(plan.image, self.image)
-        self.assertEqual(plan.ranges, ())
-        self.assertEqual(plan.changed_bytes, 0)
-        self.assertEqual(self.image, readable_fixture())
-        state = project["pages"][0]["switches"]["A"]["states"][0]
-        self.assertEqual(len(bytes.fromhex(state["native_bank"]["rows_hex"])), 80)
-        self.assertEqual(len(bytes.fromhex(state["native_bank"]["sysex_hex"])), 128)
+    def test_a_parameter_command_names_every_model_with_that_slot(self):
+        profiles = {"tank": two_reverb_profile()}
+        image = with_sysex_banks(self.image, "B", FX_ON + " " + REV_MIX_10)
+        self.assertIn("    A: TANK Mini V09 · REV / Level or Mix = 10 (depends on the preset's model)\n",
+                      config_summary(image, profiles))
 
-    def test_editing_imported_cc_reencodes_only_its_active_bank(self):
-        project = import_controller_project(self.image, {})
-        project["pages"][0]["switches"]["A"]["states"][0]["actions"][0]["message_hex"] = "BF 40 01"
-        plan = plan_project(project, {}, self.image)
-        start = switch_offset(0, "A")
-        self.assertEqual(plan.image[start + BANK_A_ROWS:start + BANK_A_ROWS + 80],
-                         b"\x01\x0F\x01\x40\x01\x01\x01\x01\x02\x00" + bytes(70))
-        self.assertEqual(plan.image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128], bytes(128))
-        allowed = set(range(start + BANK_A_ROWS, start + BANK_A_ROWS + 80))
-        allowed.update(range(start + BANK_A_SYSEX, start + BANK_A_SYSEX + 128))
-        changed = {index for index, pair in enumerate(zip(self.image, plan.image)) if pair[0] != pair[1]}
-        self.assertTrue(changed)
-        self.assertTrue(changed.issubset(allowed))
-
-    def test_alternating_sysex_import_keeps_each_frame_raw_and_round_trips(self):
-        image = bytearray(self.image)
-        start = switch_offset(0, "B")
-        image[start] = 1
-        reload_frame = "F0 00 32 09 49 00 00 00 02 01 00 00 00 12 00 00 00 7F 35 03 F7"
-        for rows_offset, sysex_offset, vector, row_index in [
-            (BANK_A_ROWS, BANK_A_SYSEX, FX_ON + " " + REV_MIX_10, 5),
-            (BANK_B_ROWS, BANK_B_SYSEX, reload_frame, 15),
+    def test_invalid_sysex_banks_are_summarized_without_naming_commands(self):
+        profiles = {"tank": reload_profile_fixture()}
+        start = switch_offset(0, "D")
+        for area, text in [
+            (stored("F0 01"), "SysEx, 2 bytes, not complete F0...F7 messages"),
+            # Typed without F0 in MidiSuite: the controller sends 00 32 09 ... as plain bytes.
+            (stored(FX_ON[3:]), "SysEx, 20 bytes, not complete F0...F7 messages"),
+            (bytes([200]) + bytes(127), "SysEx (invalid length byte 200)"),
+            (bytes(128), "SysEx (no complete message)"),
         ]:
-            rows = bytearray(b"\x00\xFE\xFD\xFC\xFB" * 16)
-            rows[row_index * 5:row_index * 5 + 5] = b"\x01\x03\x04\xFE\xFF"
-            image[start + rows_offset:start + rows_offset + 80] = rows
-            image[start + sysex_offset:start + sysex_offset + 128] = stored(vector)
-        project = import_controller_project(image, {"tank": tank_fixture()})
-        switch = project["pages"][0]["switches"]["B"]
-        self.assertEqual(switch["mode"], "alternating")
-        self.assertEqual([state["label"] for state in switch["states"]], ["Bank A", "Bank B"])
-        self.assertEqual(switch["states"][0]["actions"], [
-            {"type": "raw_midi", "message_hex": FX_ON},
-            {"type": "raw_midi", "message_hex": REV_MIX_10},
-        ])
-        self.assertEqual(switch["states"][1]["actions"], [{"type": "raw_midi", "message_hex": reload_frame}])
-        self.assertEqual(plan_project(project, {}, image).image, bytes(image))
+            image = bytearray(with_sysex_banks(self.image, "D", FX_ON))
+            image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128] = area
+            with self.subTest(text=text):
+                summary = config_summary(bytes(image), profiles)
+                self.assertTrue(summary.endswith(f"\n  D: single; A: {text}"), summary)
+                self.assertNotIn("TANK Mini", summary)
 
-    def test_all_eight_active_pages_import_and_saved_json_retains_native_metadata(self):
-        image = readable_fixture(8)
-        project = import_controller_project(image, {})
-        self.assertEqual(len(project["pages"]), 8)
-        self.assertEqual(project["pages"][-1]["name"], "Page 8")
-        with TemporaryDirectory() as folder:
-            path = Path(folder) / "read-controller.json"
-            save_config(path, project, {})
-            loaded = load_config(path, {})
-        self.assertEqual(loaded, project)
-        self.assertEqual(plan_project(loaded, {}, image).image, image)
-
-    def test_non_advanced_mode_stays_inspectable_but_cannot_be_imported(self):
+    def test_non_advanced_modes_and_bad_image_lengths(self):
         for mode in (0, 2, 12, 255):
             image = bytearray(self.image)
             image[0] = mode
             with self.subTest(mode=mode):
-                self.assertIn(f"mode {mode}", config_summary(image))
-                with self.assertRaisesRegex(ValidationError, "Advanced Custom mode.*read-only"):
-                    import_controller_project(image, {})
+                self.assertIn(f"Working mode: mode {mode}\n", config_summary(image))
+        for image in (bytes(CONFIG_SIZE - 1), bytes(CONFIG_SIZE + 1), "x" * CONFIG_SIZE):
+            with self.subTest(length=len(image)), self.assertRaises(ValidationError):
+                config_summary(image)
 
-    def test_unsupported_active_step_modes_include_page_and_switch(self):
-        for mode in (2, 3, 4, 5):
-            image = bytearray(readable_fixture(2))
-            image[switch_offset(1, "C")] = mode
-            with self.subTest(mode=mode), self.assertRaisesRegex(ValidationError, "Page 2, switch C:.*step mode cannot be imported"):
-                import_controller_project(image, {})
-
-    def test_unsupported_enabled_midi_types_include_bank_and_row(self):
-        for midi_type in (0, 2, 3, 5, 255):
-            image = bytearray(self.image)
-            offset = switch_offset(0, "C") + BANK_A_ROWS + 10
-            image[offset:offset + 5] = bytes([1, 0, midi_type, 0, 0])
-            with self.subTest(midi_type=midi_type), self.assertRaisesRegex(ValidationError, "Page 1, switch C, bank a, row 3: MIDI type"):
-                import_controller_project(image, {})
-
-    def test_invalid_enabled_flags_channels_and_cc_fields_fail_before_import(self):
-        for row, reason in [
-            (b"\x02\x00\x01\x00\x00", "enabled flag"),
-            (b"\x01\x10\x01\x00\x00", "channel"),
-            (b"\x01\x00\x01\x80\x00", "number and value"),
-            (b"\x01\x00\x01\x00\x80", "number and value"),
-        ]:
-            image = bytearray(self.image)
-            offset = switch_offset(0, "D") + BANK_A_ROWS
-            image[offset:offset + 5] = row
-            with self.subTest(row=row), self.assertRaisesRegex(ValidationError, reason):
-                import_controller_project(image, {})
-
-    def import_bank_d(self, rows, area):
-        image = bytearray(self.image)
-        start = switch_offset(0, "D")
-        image[start + BANK_A_ROWS:start + BANK_A_ROWS + 80] = rows + bytes(80 - len(rows))
-        image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128] = area
-        return bytes(image), import_controller_project(bytes(image), {})
-
-    def test_sysex_requires_one_marker_a_valid_length_and_complete_frames(self):
-        for rows, area, reason in [
-            (SYSEX_ROW + b"\x01\x00\x01\x00\x00", stored("F0 01 F7"), "exactly one"),
-            (SYSEX_ROW * 2, stored("F0 01 F7"), "exactly one"),
-            (SYSEX_ROW, stored("F0 01"), "no F7 terminator"),
-            (SYSEX_ROW, stored("F0 80 F7"), "7-bit data"),
-            (SYSEX_ROW, stored("F0 01 F7 00 05"), "data byte 4 is not the start"),
-            (SYSEX_ROW, bytes(128), "no complete message"),
-            (SYSEX_ROW, bytes([200]) + bytes(127), "length byte 200 exceeds the 127-byte limit"),
-            # Typed without F0 in MidiSuite: the controller sends 00 32 09 ... as plain bytes.
-            (SYSEX_ROW, stored(FX_ON[3:]), "starts with 00, not F0"),
-            (SYSEX_ROW, legacy_stored("F0 01"), "no F7 terminator"),
-            (SYSEX_ROW, legacy_stored("F0 01 F7 00 05"), "data byte 4 is not the start"),
-        ]:
-            with self.subTest(reason=reason, area=area[:6].hex(" ")), self.assertRaisesRegex(ValidationError, reason):
-                self.import_bank_d(rows, area)
-
-    def test_bytes_after_the_length_are_not_sent_and_are_not_imported(self):
-        area = bytes.fromhex("03 F0 01 F7 F0 02 F7") + bytes(121)
-        image, project = self.import_bank_d(SYSEX_ROW, area)
-        state = project["pages"][0]["switches"]["D"]["states"][0]
-        self.assertEqual(state["actions"], [{"type": "raw_midi", "message_hex": "F0 01 F7"}])
-        self.assertEqual(plan_project(project, {}, image).image, image)
-
-    def test_full_127_byte_sysex_bank_imports_without_losing_the_terminator(self):
-        data = (b"\xF0" + bytes(125) + b"\xF7").hex(" ")
-        image, project = self.import_bank_d(SYSEX_ROW, stored(data))
-        message = project["pages"][0]["switches"]["D"]["states"][0]["actions"][0]["message_hex"]
-        self.assertEqual(bytes.fromhex(message), bytes.fromhex(data))
-        self.assertEqual(plan_project(project, {}, image).image, image)
-
-    def test_old_stompilot_banks_are_flagged_imported_and_rewritten_with_a_length_byte(self):
+    def test_old_stompilot_banks_are_flagged_until_a_project_rewrites_them(self):
         image = legacy_fixture()
         banks = ["Page 1, switch A, bank A", "Page 1, switch A, bank B", "Page 1, switch B, bank A"]
         self.assertEqual(legacy_sysex_banks(image), banks)
@@ -447,28 +394,10 @@ class ChocolateImportTests(unittest.TestCase):
         self.assertIn("old Stompilot format", switches["A"]["bank_b"])
         self.assertIn("old Stompilot format", switches["B"]["bank_a"])
         self.assertIn("3 SysEx bank(s) were written by an earlier Stompilot", config_summary(image))
-        project = import_controller_project(image, {})
-        switch_a = project["pages"][0]["switches"]["A"]
-        self.assertEqual([state["actions"] for state in switch_a["states"]], [
-            [{"type": "raw_midi", "message_hex": FX_ON}], [{"type": "raw_midi", "message_hex": FX_OFF}]])
-        self.assertEqual(project["pages"][0]["switches"]["B"]["states"][0]["actions"], [
-            {"type": "raw_midi", "message_hex": FX_ON}, {"type": "raw_midi", "message_hex": REV_MIX_10}])
-        # The imported native bytes keep the old format; writing must not reuse them.
-        self.assertTrue(switch_a["states"][0]["native_bank"]["sysex_hex"].startswith("F0"))
-        plan = plan_project(project, {}, image)
-        a, b = switch_offset(0, "A"), switch_offset(0, "B")
-        areas = [(a + BANK_A_SYSEX, FX_ON), (a + BANK_B_SYSEX, FX_OFF), (b + BANK_A_SYSEX, FX_ON + " " + REV_MIX_10)]
-        allowed = set()
-        for offset, vector in areas:
-            self.assertEqual(plan.image[offset:offset + 128], stored(vector))
-            allowed.update(range(offset, offset + 128))
-        changed = {index for index, pair in enumerate(zip(image, plan.image)) if pair[0] != pair[1]}
-        self.assertTrue(changed.issubset(allowed))
+        plan = plan_project(config_fixture(), {"tank": tank_fixture(), "generic": cc_fixture()}, image)
         self.assertEqual(sum("old Stompilot format" in line for line in plan.summaries), 3)
         self.assertEqual(legacy_sysex_banks(plan.image), [])
         self.assertNotIn("earlier Stompilot", config_summary(plan.image))
-        reread = import_controller_project(plan.image, {})
-        self.assertEqual(plan_project(reread, {}, plan.image).ranges, ())
 
     def test_only_active_banks_are_reported_in_the_old_format(self):
         image = bytearray(legacy_fixture())
@@ -482,20 +411,138 @@ class ChocolateImportTests(unittest.TestCase):
         image[switch_offset(1, "C")] = 0
         self.assertIn("Page 2, switch C, bank A", legacy_sysex_banks(image))
 
-    def test_old_format_bank_too_long_for_the_length_byte_cannot_be_imported(self):
-        data = (b"\xF0" + bytes(126) + b"\xF7").hex(" ")
-        with self.assertRaisesRegex(ValidationError, "switch D.*128 bytes; the maximum is 127"):
-            self.import_bank_d(SYSEX_ROW, legacy_stored(data))
+
+class NativeBankTests(unittest.TestCase):
+    """The rules that the stored bytes of a bank meet before a write reuses them."""
+
+    def decode(self, rows, area=bytes(128)):
+        return _decode_bank(rows + bytes(80 - len(rows)), area, "Page 1, switch D, bank A")
+
+    def test_program_change_rows_decode_as_two_byte_messages(self):
+        # MidiSuite's type 0; a FootCtrlPlus_013 sent C0 04 for this row on 2026-10-16.
+        self.assertEqual(self.decode(bytes.fromhex("01 00 00 04 00 01 0F 01 07 64")),
+                         (bytes.fromhex("C0 04"), bytes.fromhex("BF 07 64")))
+        with self.assertRaisesRegex(ValidationError, "row 1: Program Change number"):
+            self.decode(bytes.fromhex("01 00 00 80 00"))
+
+    def test_unsupported_enabled_midi_types_name_the_row(self):
+        for midi_type in (2, 3, 5, 255):
+            with self.subTest(midi_type=midi_type), \
+                    self.assertRaisesRegex(ValidationError, "Page 1, switch D, bank A, row 3: MIDI type"):
+                self.decode(bytes(10) + bytes([1, 0, midi_type, 0, 0]))
+
+    def test_invalid_enabled_flags_channels_and_cc_fields(self):
+        for row, reason in [
+            (b"\x02\x00\x01\x00\x00", "enabled flag"),
+            (b"\x01\x10\x01\x00\x00", "channel"),
+            (b"\x01\x00\x01\x80\x00", "number and value"),
+            (b"\x01\x00\x01\x00\x80", "number and value"),
+        ]:
+            with self.subTest(row=row), self.assertRaisesRegex(ValidationError, reason):
+                self.decode(row)
+
+    def test_sysex_requires_one_marker_a_valid_length_and_complete_frames(self):
+        for rows, area, reason in [
+            (SYSEX_ROW + b"\x01\x00\x01\x00\x00", stored("F0 01 F7"), "exactly one"),
+            (SYSEX_ROW * 2, stored("F0 01 F7"), "exactly one"),
+            (SYSEX_ROW, stored("F0 01"), "no F7 terminator"),
+            (SYSEX_ROW, stored("F0 80 F7"), "7-bit data"),
+            (SYSEX_ROW, stored("F0 01 F7 00 05"), "data byte 4 is not the start"),
+            (SYSEX_ROW, bytes(128), "no complete message"),
+            (SYSEX_ROW, bytes([200]) + bytes(127), "length byte 200 exceeds the 127-byte limit"),
+            (SYSEX_ROW, stored(FX_ON[3:]), "starts with 00, not F0"),
+            (SYSEX_ROW, legacy_stored("F0 01"), "no F7 terminator"),
+            (SYSEX_ROW, legacy_stored("F0 01 F7 00 05"), "data byte 4 is not the start"),
+        ]:
+            with self.subTest(reason=reason, area=area[:6].hex(" ")), self.assertRaisesRegex(ValidationError, reason):
+                self.decode(rows, area)
+
+    def test_only_the_bytes_within_the_length_are_sent(self):
+        self.assertEqual(self.decode(SYSEX_ROW, bytes.fromhex("03 F0 01 F7 F0 02 F7") + bytes(121)),
+                         (bytes.fromhex("F0 01 F7"),))
+        data = b"\xF0" + bytes(125) + b"\xF7"
+        self.assertEqual(self.decode(SYSEX_ROW, stored(data.hex(" "))), (data,))
+
+
+class EarlierImportTests(unittest.TestCase):
+    """Projects that Stompilot 0.3.3 and earlier imported from the controller still write correctly."""
+
+    def setUp(self):
+        self.image = readable_fixture()
+
+    def test_unchanged_banks_write_back_every_byte_including_row_gaps_and_unused_buffers(self):
+        image = bytearray(self.image)
+        start = switch_offset(0, "B")
+        image[start] = 1
+        for rows_offset, sysex_offset, vector, row_index in [
+            (BANK_A_ROWS, BANK_A_SYSEX, FX_ON + " " + REV_MIX_10, 5),
+            (BANK_B_ROWS, BANK_B_SYSEX, RELOAD_CURRENT, 15),
+        ]:
+            rows = bytearray(b"\x00\xFE\xFD\xFC\xFB" * 16)
+            rows[row_index * 5:row_index * 5 + 5] = b"\x01\x03\x04\xFE\xFF"
+            image[start + rows_offset:start + rows_offset + 80] = rows
+            image[start + sysex_offset:start + sysex_offset + 128] = stored(vector)
+        image = bytes(image)
+        project = earlier_import(image)
+        switches = project["pages"][0]["switches"]
+        self.assertEqual(switches["A"]["states"][0]["actions"], [raw("BF 40 7F"), raw("B1 02 00")])
+        self.assertEqual([state["actions"] for state in switches["B"]["states"]],
+                         [[raw(FX_ON), raw(REV_MIX_10)], [raw(RELOAD_CURRENT)]])
+        plan = plan_project(project, {}, image)
+        self.assertEqual(plan.image, image)
+        self.assertEqual(plan.ranges, ())
+
+    def test_editing_a_raw_cc_reencodes_only_its_bank(self):
+        project = earlier_import(self.image)
+        project["pages"][0]["switches"]["A"]["states"][0]["actions"][0]["message_hex"] = "BF 40 01"
+        plan = plan_project(project, {}, self.image)
+        start = switch_offset(0, "A")
+        self.assertEqual(plan.image[start + BANK_A_ROWS:start + BANK_A_ROWS + 80],
+                         b"\x01\x0F\x01\x40\x01\x01\x01\x01\x02\x00" + bytes(70))
+        self.assertEqual(plan.image[start + BANK_A_SYSEX:start + BANK_A_SYSEX + 128], bytes(128))
+        allowed = set(range(start + BANK_A_ROWS, start + BANK_A_ROWS + 80))
+        allowed.update(range(start + BANK_A_SYSEX, start + BANK_A_SYSEX + 128))
+        changed = {index for index, pair in enumerate(zip(self.image, plan.image)) if pair[0] != pair[1]}
+        self.assertTrue(changed)
+        self.assertTrue(changed.issubset(allowed))
+
+    def test_saved_json_with_eight_pages_keeps_native_metadata(self):
+        image = readable_fixture(8)
+        project = earlier_import(image, 8)
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "read-controller.json"
+            save_config(path, project, {})
+            loaded = load_config(path, {})
+        self.assertEqual(loaded, project)
+        self.assertEqual(plan_project(loaded, {}, image).image, image)
+
+    def test_old_format_native_banks_are_rewritten_with_a_length_byte(self):
+        image = legacy_fixture()
+        project = earlier_import(image)
+        switch_a = project["pages"][0]["switches"]["A"]
+        self.assertEqual([state["actions"] for state in switch_a["states"]], [[raw(FX_ON)], [raw(FX_OFF)]])
+        # The stored native bytes keep the old format; writing must not reuse them.
+        self.assertTrue(switch_a["states"][0]["native_bank"]["sysex_hex"].startswith("F0"))
+        plan = plan_project(project, {}, image)
+        a, b = switch_offset(0, "A"), switch_offset(0, "B")
+        areas = [(a + BANK_A_SYSEX, FX_ON), (a + BANK_B_SYSEX, FX_OFF), (b + BANK_A_SYSEX, FX_ON + " " + REV_MIX_10)]
+        allowed = set()
+        for offset, vector in areas:
+            self.assertEqual(plan.image[offset:offset + 128], stored(vector))
+            allowed.update(range(offset, offset + 128))
+        changed = {index for index, pair in enumerate(zip(image, plan.image)) if pair[0] != pair[1]}
+        self.assertTrue(changed.issubset(allowed))
+        self.assertEqual(sum("old Stompilot format" in line for line in plan.summaries), 3)
+        self.assertEqual(plan_project(earlier_import(plan.image), {}, plan.image).ranges, ())
 
     def test_native_metadata_is_validated_before_reuse_or_reencoding(self):
-        project = import_controller_project(self.image, {})
-        state = project["pages"][0]["switches"]["A"]["states"][0]
+        project = earlier_import(self.image)
         for metadata, reason in [
             (None, "must be an object"),
             ({"rows_hex": "00", "sysex_hex": "00 " * 128}, "exactly 80 bytes"),
             ({"rows_hex": "00 " * 80, "sysex_hex": "not hex"}, "hexadecimal text"),
             ({"rows_hex": "00 " * 80, "sysex_hex": "00"}, "exactly 128 bytes"),
-            ({"rows_hex": "01 00 00 00 00 " + "00 " * 75, "sysex_hex": "00 " * 128}, "MIDI type 0"),
+            ({"rows_hex": "01 00 02 00 00 " + "00 " * 75, "sysex_hex": "00 " * 128}, "MIDI type 2"),
         ]:
             for edited in (False, True):
                 changed = deepcopy(project)
@@ -505,17 +552,6 @@ class ChocolateImportTests(unittest.TestCase):
                     changed_state["actions"][0]["message_hex"] = "BF 40 01"
                 with self.subTest(metadata=metadata, edited=edited), self.assertRaisesRegex(ValidationError, reason):
                     plan_project(changed, {}, self.image)
-        self.assertIsInstance(state["native_bank"], dict)
-
-    def test_bad_image_lengths_and_out_of_range_footer_values_are_rejected(self):
-        for image in (bytes(CONFIG_SIZE - 1), bytes(CONFIG_SIZE + 1), "x" * CONFIG_SIZE):
-            with self.subTest(length=len(image)), self.assertRaises(ValidationError):
-                import_controller_project(image, {})
-        for offset in (PAGE_COUNT_OFFSET, CURRENT_PAGE_OFFSET):
-            image = bytearray(self.image)
-            image[offset] = 8
-            with self.subTest(offset=offset), self.assertRaisesRegex(ValidationError, "advanced page settings"):
-                import_controller_project(image, {})
 
 
 if __name__ == "__main__":
