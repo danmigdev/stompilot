@@ -13,6 +13,7 @@ from .chocolate_transport import ChocolateTransportError, UsbChocolate
 class NativeDevice:
     def __init__(self):
         self.app = bytes((i * 13 + 3) & 255 for i in range(p.APP_SIZE))
+        self.pacing_module = bytes((i * 7 + 11) & 255 for i in range(p.PACING_SIZE))
         self.memory = bytearray(0x20000)
         self.flash = bytearray([255]) * 0x40000
         image = bytearray(p.CONFIG_SIZE)
@@ -64,6 +65,8 @@ class NativeDevice:
             if command == 0x23:
                 if p.APP_BASE <= address < p.APP_BASE + p.APP_SIZE:
                     data = self.app[address - p.APP_BASE:address - p.APP_BASE + count]
+                elif p.PACING_BASE <= address < p.PACING_BASE + p.PACING_SIZE:
+                    data = self.pacing_module[address - p.PACING_BASE:address - p.PACING_BASE + count]
                 elif p.FLASH_VIEW <= address < p.FLASH_VIEW + p.FLASH_SIZE:
                     start = p.FLASH_BASE + address - p.FLASH_VIEW
                     data = self.flash[start:start + count]
@@ -137,6 +140,42 @@ class VerifiedPersistenceTests(unittest.TestCase):
         for pos in (450, 4095, 4096, 8600, 12700, 16800, 22000):
             after[pos] ^= 255
         return bytes(after)
+
+    def use_pacing_fixture(self):
+        app = bytearray(self.device.app)
+        app[0xFE34:0xFE38] = b"pace"
+        self.device.app = bytes(app)
+        for name, value in (("PACED_APP_SHA256", p.digest(self.device.app)),
+                            ("PACING_SHA256", p.digest(self.device.pacing_module))):
+            context = patch.object(p, name, value)
+            context.start()
+            self.addCleanup(context.stop)
+
+    def test_pacing_build_requires_module_and_records_firmware_for_restart(self):
+        self.use_pacing_fixture()
+        after = self.changed()
+        self.writer.write(self.original_ram, after)
+        self.assertEqual(p.pending_save(self.directory).state["firmware"], p.PACED_APP_SHA256)
+        self.device.power_cycle()
+        self.assertEqual(p.VerifiedWriter(self.device, self.directory).verify_restart(), after)
+        self.assert_no_firmware_changes()
+
+    def test_pacing_build_with_damaged_module_stops_before_any_write(self):
+        self.use_pacing_fixture()
+        self.device.pacing_module = bytes(p.PACING_SIZE)
+        with self.assertRaisesRegex(ChocolateTransportError, "pacing module"):
+            self.writer.write(self.original_ram, self.changed())
+        self.assertEqual(self.device.ram_writes + self.device.erases + self.device.programs, [])
+
+    def test_firmware_change_blocks_restore_and_restart_verification(self):
+        self.writer.write(self.original_ram, self.changed())
+        self.device.power_cycle()
+        self.use_pacing_fixture()
+        before = len(self.device.ram_writes), len(self.device.erases), len(self.device.programs)
+        for action in ("restore", "verify_restart"):
+            with self.subTest(action=action), self.assertRaisesRegex(ChocolateTransportError, "firmware changed"):
+                getattr(p.VerifiedWriter(self.device, self.directory), action)()
+        self.assertEqual(before, (len(self.device.ram_writes), len(self.device.erases), len(self.device.programs)))
 
     def assert_no_firmware_changes(self):
         self.assertEqual(bytes(self.device.flash[:p.FLASH_BASE]), self.original_flash[:p.FLASH_BASE])

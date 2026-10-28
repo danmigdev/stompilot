@@ -1,4 +1,4 @@
-"""Verified configuration-sector writes for the exact audited stock V13 build.
+"""Verified configuration-sector writes for the exact audited V13 builds.
 
 Uses stock callbacks via a temporary DATA table in unused SysEx padding. Only
 USRFLASH is erased/programmed; executable code, firmware and boot are untouched.
@@ -24,6 +24,9 @@ except ImportError:
 
 APP_BASE, APP_SIZE = 0x1E00120, 155488
 APP_SHA256 = "f535c717a1ce23ef1b0fe5251c0ab7c906f2be068d2c172ad8440be1e0edeadc"
+PACED_APP_SHA256 = "c8f000ec252f20987df9bb1ed98ea4bbf718a11806c153787ec41dc3b08ad85a"
+PACING_BASE, PACING_SIZE = 0x1E265C0, 224
+PACING_SHA256 = "b084c9d607210116d5887729c391541e786d6760fa027f83639455c973d4e5cd"
 RAM_BASE, POINTER, SLOT, ERASE_UNIT = 0x13490, 0x19100, 0x19774, 0x193DB
 FLASH_BASE, FLASH_VIEW, FLASH_SIZE = 0x39000, 0x1E38000, 0x6000
 DISABLED_POINTER, SECTOR_SIZE, PAGE_SIZE = 0x100000, 4096, 256
@@ -63,7 +66,8 @@ class SaveJournal:
         self.state = json.loads((self.directory / "state.json").read_text(encoding="utf-8"))
         require(isinstance(self.state, dict) and isinstance(self.state.get("hashes"), dict)
                 and isinstance(self.state.get("events"), list)
-                and self.state.get("schema_version") == 1 and self.state.get("firmware") == APP_SHA256
+                and self.state.get("schema_version") == 1
+                and self.state.get("firmware") in (APP_SHA256, PACED_APP_SHA256)
                 and self.state.get("status") in DONE | {"prepared", "writing", "recovery_required", "restart_required"}
                 and self.state.get("target") in {"desired", "original"}, "Invalid verified-save record. Keep the backup files.")
         self.original = self._load("original", FLASH_SIZE)
@@ -79,7 +83,9 @@ class SaveJournal:
         return data
 
     @classmethod
-    def create(cls, directory, ram, original, desired):
+    def create(cls, directory, ram, original, desired, *, firmware=None):
+        firmware = APP_SHA256 if firmware is None else firmware
+        require(firmware in (APP_SHA256, PACED_APP_SHA256), "Unsupported firmware for a verified-save record.")
         root = Path(directory) / "verified-saves"
         root.mkdir(parents=True, exist_ok=True)
         folder = root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ") + "-" + uuid.uuid4().hex[:8])
@@ -87,7 +93,7 @@ class SaveJournal:
         values = dict(ram=ram, original=original, desired=desired)
         for name, data in values.items():
             durable(folder / f"{name}.bin", data)
-        state = dict(schema_version=1, firmware=APP_SHA256, status="prepared", target="desired",
+        state = dict(schema_version=1, firmware=firmware, status="prepared", target="desired",
                      hashes={name: digest(data) for name, data in values.items()}, events=[])
         durable(folder / "state.json", (json.dumps(state, indent=2) + "\n").encode())
         return cls(folder)
@@ -147,9 +153,11 @@ class VerifiedWriter:
         self.scratch = None
         self.ram = None
         self.journal = None
+        self.firmware_sha256 = None
 
     def read(self, address, size):
         ranges = ((APP_BASE, APP_SIZE), (RAM_BASE, CONFIG_SIZE), (FLASH_VIEW, FLASH_SIZE),
+                  (PACING_BASE, PACING_SIZE),
                   (POINTER, 4), (SLOT, 4), (ERASE_UNIT, 1), (0x197E8, 32), (0x1CF60, 0x3E4))
         require(size > 0 and any(start <= address < address + size <= start + length for start, length in ranges),
                 "Read outside the audited V13 regions.")
@@ -163,10 +171,19 @@ class VerifiedWriter:
         return bytes(result)
 
     def audit(self):
-        require(self.device.query().name == "FootCtrlPlus_013", "Verified sector saving supports the audited stock V13 only.")
+        require(self.device.query().name == "FootCtrlPlus_013", "Verified sector saving supports the audited V13 builds only.")
         self.progress("Checking the installed firmware before configuration access…")
         app = self.read(APP_BASE, APP_SIZE)
-        require(digest(app) == APP_SHA256, "This V13 build differs from the verified original. No configuration write was sent.")
+        fingerprint = digest(app)
+        require(fingerprint in (APP_SHA256, PACED_APP_SHA256),
+                "This V13 build differs from the verified firmware. No configuration write was sent.")
+        if fingerprint == PACED_APP_SHA256:
+            require(digest(self.read(PACING_BASE, PACING_SIZE)) == PACING_SHA256,
+                    "The V13 MIDI pacing module differs from the verified build. No configuration write was sent.")
+        if self.journal is not None:
+            require(self.journal.state["firmware"] == fingerprint,
+                    "The firmware changed since this save. Keep the backup; no configuration write was sent.")
+        self.firmware_sha256 = fingerprint
         require(self.read(0x1CF60, 0x3E4) == app[0x25B54:0x25F38], "The running flash driver differs. No write was sent.")
         state = struct.unpack("<8I", self.read(0x197E8, 32))
         require(state[0] == 0x40000 and state[6:] == (0x1000, 0x1E00000), "Unexpected V13 flash capacity or mapping.")
@@ -319,7 +336,8 @@ class VerifiedWriter:
         target = bytes(after) + current[CONFIG_SIZE:]
         if current == target and self.ram == bytes(after):
             return bytes(after)  # Already persistent; no temporary control writes or restart needed.
-        self.journal = SaveJournal.create(self.directory, self.ram, current, target)
+        self.journal = SaveJournal.create(self.directory, self.ram, current, target,
+                                          firmware=self.firmware_sha256)
         return self.transfer(current)
 
     def restore(self):
@@ -356,6 +374,7 @@ class VerifiedWriter:
     def verify_restart(self):
         journal = pending_save(self.directory)
         require(journal is not None, "There is no unfinished save to verify.")
+        self.journal = journal
         self.audit()
         self.normal_controls()
         target = journal.target
