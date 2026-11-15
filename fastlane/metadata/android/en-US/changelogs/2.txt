@@ -1,0 +1,1 @@
+First downloadable Android release under GPL-3.0-or-later. Create named CC, Program Change and SysEx commands without profiles or code. Read and write Chocolate Plus configurations with backups, and forward footswitch messages to TANK Mini in the full-screen live view. Includes the TANK Mini V09 profile and support for Chocolate Plus firmware 12–16.

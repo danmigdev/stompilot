@@ -416,8 +416,8 @@ The release contains `Stompilot.apk`, `Stompilot.exe`, `tank_mini_live_boost.jso
 After committing and pushing the changes to release:
 
 ```powershell
-git tag -a v0.4.0 -m "Stompilot v0.4.0"
-git push origin v0.4.0
+git tag -a v0.4.1 -m "Stompilot v0.4.1"
+git push origin v0.4.1
 ```
 
 Use a new `vMAJOR.MINOR.PATCH` tag for each release. A suffix such as
