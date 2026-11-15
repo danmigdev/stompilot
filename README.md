@@ -304,6 +304,35 @@ the saved presets in RAM and flash before and after, and restores the live
 patch when it ends (`relay --keep` keeps the changes). A JSON report goes to
 `research/tank-checks/`.
 
+## Android app and live view
+
+The Android app has the same editor as the desktop and a full-screen live view.
+The phone is the USB host: a powered USB hub connects the Chocolate Plus (switch
+on **U**, its USB jack) and the TANK Mini.
+
+```text
+Phone (USB-C) --> powered USB hub --+--> Chocolate Plus (USB jack, switch on U)
+                                    +--> TANK Mini
+```
+
+The app forwards every footswitch press to the TANK, so the Chocolate never
+starts in H mode. **Live** in the menu opens the live view over the whole
+screen: the page name at the top and switches A to D below, two by two with the
+phone upright and in a row in landscape. Each square shows the switch's label,
+what each of its states sends, and the state of the TANK effects it uses. A
+press lights its square and marks the state it sent; the page follows the
+presses. The X at the top right, or the phone's back button, stops forwarding
+and returns to the editor. While the live view is open the screen stays on and
+forwarding continues with the screen off.
+
+To use the desktop instead, move the hub's cable from the phone to the PC; a
+USB device has one host at a time.
+
+Build the app with **Build Android.cmd** (Node.js, a JDK 17 or later and the
+Android SDK): it writes `dist\Stompilot.apk` for arm64 phones, Android 8 or
+later. Install it by copying it to the phone, or with
+`adb install -r dist\Stompilot.apk`.
+
 ## Run or build from source
 
 Source development requires Python 3.12 or later, Node.js 20.19 or later, and

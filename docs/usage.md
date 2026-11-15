@@ -205,6 +205,41 @@ not a fixed list of OFF values. The
 [reload evidence](../research/tank_preset_reload.md) records the experimental
 packet and static V09 normal-mode path.
 
+## Android app
+
+`android/` is a Gradle project (Gradle 8.11.1, Android Gradle Plugin 8.10.1,
+Kotlin 2.0.21, Chaquopy 17.1 with Python 3.12, minSdk 26). The build copies
+`midi_configurator/` (without tests and `desktop.py`) and `frontend/build` into
+the app, so the phone runs the same service and interface as the desktop.
+
+- `MainActivity` hosts the interface in a WebView served from the app's assets.
+- `Bridge` is the interface's `request(method, payload)` channel: requests run
+  `DesktopService.request` through `stompilot_android.py` on worker threads and
+  answer through `window.__stompilotResolve`. `bridge.ts` uses it when
+  `window.StompilotAndroid` exists.
+- `Documents` gives the service Android's file picker: a picked document is
+  copied to a private file, and changed files are copied back after each
+  request.
+- `MidiHub` opens USB MIDI devices through `android.media.midi`, frames their
+  byte stream (`MidiFramer`: SysEx across callbacks, running status, real-time
+  bytes) and names ports like Windows ("FootCtrlPlus (3) 0"), so
+  `list_usb_devices` and `UsbTank.connect` work unchanged. `android_midi.py`
+  is the mido-shaped backend over it, selected with
+  `chocolate_transport.use_backend`.
+- Forwarding runs in `MidiHub`: each framed message from the Chocolate goes
+  straight to the TANK and to the live view as a `stompilot-live-message`
+  event. It pauses while the editor holds the Chocolate open, so controller
+  replies are never forwarded. `LiveService` is a foreground service that
+  keeps the app running with the screen off.
+- The live view asks the Python side for `chocolate_page` (offset 23640) and
+  `tank_state` (preset, volume, each block's state and model) and matches each
+  burst of messages to a switch state by its exact bytes in the open
+  project's compiled output.
+
+Debug builds are signed with the debug key. `Build Android.cmd` builds arm64
+only; for the x86_64 emulator, run `gradlew assembleDebug -Pabis=x86_64` in
+`android/`.
+
 ## Source layout
 
 - `frontend/src/App.svelte`: startup, project editor, profiles, controller page,
@@ -222,7 +257,10 @@ packet and static V09 normal-mode path.
   durable complete backups, interruption recovery and restart verification.
 - `midi_configurator/tank_check.py`: checks the TANK profile's commands on a
   TANK connected by USB.
+- `android/`: the Android app; `android/app/src/main/python/` holds its
+  Python entry point and MIDI backend.
 - `frontend/src/LiveView.svelte`: the Android live view.
+- `Build Android.cmd`: builds `dist\Stompilot.apk`.
 - `midi_configurator/project.py`: empty projects and example helpers.
 - `midi_configurator/runtime_paths.py`: bundled resources and writable storage.
 - `midi_configurator/profiles/`: built-in profiles and evidence metadata.
