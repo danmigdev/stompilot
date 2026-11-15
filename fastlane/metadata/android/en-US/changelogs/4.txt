@@ -1,0 +1,1 @@
+Preserve APK alignment during release signing so F-Droid can verify the rebuilt app and reuse the same signing certificate. Includes the generic CC, Program Change and SysEx editor, Chocolate Plus USB configuration with backups, the TANK Mini V09 profile and Android Live view.

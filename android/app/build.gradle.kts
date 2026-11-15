@@ -39,8 +39,8 @@ android {
         applicationId = "app.stompilot"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.4.2"
+        versionCode = 4
+        versionName = "0.4.3"
         ndk {
             // Phones are arm64. Each ABI adds a Python runtime, so the emulator's
             // x86_64 is built only on request: gradlew assembleDebug -Pabis=x86_64

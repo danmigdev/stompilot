@@ -227,7 +227,8 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$key"
           mkdir -p dist
           sdk="$ANDROID_HOME/build-tools/35.0.0"
-          "$sdk/apksigner" sign --ks "$key" --ks-key-alias "$ANDROID_KEYSTORE_ALIAS" \
+          # SDK 35 otherwise rewrites ZIP padding, which breaks F-Droid's signature comparison.
+          "$sdk/apksigner" sign --alignment-preserved true --ks "$key" --ks-key-alias "$ANDROID_KEYSTORE_ALIAS" \
             --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEYSTORE_PASSWORD \
             --out dist/Stompilot.apk android/app/build/outputs/apk/release/app-release-unsigned.apk
           "$sdk/apksigner" verify --verbose --print-certs dist/Stompilot.apk | tee "$RUNNER_TEMP/apk-verification.txt"

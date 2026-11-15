@@ -1,0 +1,1 @@
+Preserva l'allineamento dell'APK durante la firma, così F-Droid può verificare la ricompilazione e usare lo stesso certificato. Include l'editor generico CC, Program Change e SysEx, la configurazione USB di Chocolate Plus con backup, il profilo TANK Mini V09 e la vista Live Android.
