@@ -445,6 +445,67 @@ class ImportedMidiTests(unittest.TestCase):
         self.assertEqual(config, before)
 
 
+class GenericMidiTests(unittest.TestCase):
+    def test_commands_compile_without_profiles_and_keep_their_label(self):
+        for message, description in (("BF 7F 00", "Channel 16 / CC 127 = 0"),
+                                     ("C0 00", "Channel 1 / Program Change 0"),
+                                     ("CF 7F", "Channel 16 / Program Change 127"),
+                                     ("F0 41 00 7F F7", "SysEx (5 bytes)")):
+            action = {"type": "midi", "message_hex": message, "label": "My pedal",
+                      "evidence": {"status": "device_checked"}}
+            before = deepcopy(action)
+            with self.subTest(message=message):
+                result = compile_action(action, {})
+                self.assertEqual(result.messages, (bytes.fromhex(message),))
+                self.assertEqual(result.summary, "My pedal: " + description)
+                self.assertEqual(result.evidence_status, "user_defined")
+                self.assertEqual(action, before)
+
+    def test_invalid_frames_and_conflicting_semantic_fields_are_rejected(self):
+        for message in ("", "C", "C0", "C0 80", "C0 01 02", "B0 01 80", "90 3C 7F",
+                        "F0 41 80 F7", "F0 01", "F0 01 F7 F0 02 F7"):
+            with self.subTest(message=message), self.assertRaises(ValidationError):
+                compile_action({"type": "midi", "message_hex": message}, {})
+        for field in ("device_id", "block_id", "model_id", "param_id", "channel", "value"):
+            with self.subTest(field=field), self.assertRaisesRegex(ValidationError, "does not accept"):
+                compile_action({"type": "midi", "message_hex": "C0 00", field: None}, {})
+        for label in (None, "", 12, []):
+            with self.subTest(label=label), self.assertRaisesRegex(ValidationError, "midi.label"):
+                compile_action({"type": "midi", "message_hex": "C0 00", "label": label}, {})
+
+    def test_cc_and_program_change_keep_channel_type_and_order(self):
+        commands = [{"type": "midi", "message_hex": message} for message in ("B3 00 02", "C3 7F", "BF 20 01")]
+        result = compile_state({"actions": commands}, {})
+        self.assertEqual(result.midi_rows, (
+            {"channel": 4, "type": "CC", "data1": 0, "data2": 2, "hex": "B3 00 02"},
+            {"channel": 4, "type": "PC", "data1": 127, "data2": 0, "hex": "C3 7F"},
+            {"channel": 16, "type": "CC", "data1": 32, "data2": 1, "hex": "BF 20 01"}))
+        self.assertEqual(result.evidence_status, "user_defined")
+
+    def test_generic_commands_obey_sysex_bank_limits(self):
+        sysex = {"type": "midi", "message_hex": (b"\xF0" + bytes(125) + b"\xF7").hex()}
+        self.assertEqual(compile_state({"actions": [sysex]}, {}).byte_count, 127)
+        with self.assertRaisesRegex(ValidationError, "cannot mix"):
+            compile_state({"actions": [sysex, {"type": "midi", "message_hex": "C0 01"}]}, {})
+        with self.assertRaisesRegex(ValidationError, "254 SysEx bytes"):
+            compile_state({"actions": [sysex, sysex]}, {})
+        with self.assertRaisesRegex(ValidationError, "maximum is 127"):
+            compile_action({"type": "midi", "message_hex": (b"\xF0" + bytes(126) + b"\xF7").hex()}, {})
+
+    def test_named_generic_project_round_trips_without_a_profile(self):
+        config = {"schema_version": 1, "name": "My MIDI device", "pages": [{"name": "Page 1", "switches": {
+            "A": {"mode": "single", "states": [{"actions": [
+                {"type": "midi", "message_hex": "C1 03", "label": "Clean sound"}]}]}}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "generic.json"
+            save_config(path, config, {})
+            self.assertEqual(load_config(path, {}), config)
+            result = compile_config(load_config(path, {}), {})
+            state = result["pages"][0]["switches"]["A"]["states"][0]
+            self.assertEqual(state["messages_hex"], ["C1 03"])
+            self.assertEqual(state["summaries"], ["Clean sound: Channel 2 / Program Change 3"])
+
+
 class ReloadPresetTests(unittest.TestCase):
     def setUp(self):
         self.profiles = {"tank": reload_profile_fixture(), "generic": cc_fixture()}

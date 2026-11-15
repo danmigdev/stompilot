@@ -639,33 +639,42 @@ def register_protocol(name: str, encoder: Callable[[dict, dict], CompiledAction]
 
 
 def _compile_raw_midi(action: dict) -> CompiledAction:
-    """Preserve one imported CC/SysEx message without inventing device metadata."""
+    """Compile a user command or preserve an imported CC/SysEx message."""
+    kind = action["type"]
+    imported = kind == "raw_midi"
     forbidden = {"device_id", "block_id", "model_id", "param_id", "channel", "value"}
     extra = sorted(forbidden.intersection(action))
     if extra:
-        raise ValidationError(f"raw_midi does not accept device, effect or value fields: {', '.join(extra)}")
-    message_hex = _text(action.get("message_hex"), "raw_midi.message_hex")
+        raise ValidationError(f"{kind} does not accept device, effect or value fields: {', '.join(extra)}")
+    label = _text(action["label"], "midi.label") if not imported and "label" in action else ""
+    message_hex = _text(action.get("message_hex"), f"{kind}.message_hex")
     try:
         message = bytes.fromhex(message_hex)
     except ValueError as exc:
-        raise ValidationError("raw_midi.message_hex: expected hexadecimal MIDI bytes") from exc
+        raise ValidationError(f"{kind}.message_hex: expected hexadecimal MIDI bytes") from exc
+    warnings = ()
     if len(message) == 3 and 0xB0 <= message[0] <= 0xBF and all(byte <= 127 for byte in message[1:]):
         channel = (message[0] & 15) + 1
-        summary = f"Imported MIDI: Channel {channel} / CC {message[1]} = {message[2]}"
-        return CompiledAction((message,), summary, "controller_read")
-    if len(message) >= 2 and message[0] == 0xF0 and message[-1] == 0xF7 and all(byte <= 127 for byte in message[1:-1]):
+        summary = f"Channel {channel} / CC {message[1]} = {message[2]}"
+    elif not imported and len(message) == 2 and 0xC0 <= message[0] <= 0xCF and message[1] <= 127:
+        summary = f"Channel {(message[0] & 15) + 1} / Program Change {message[1]}"
+    elif len(message) >= 2 and message[0] == 0xF0 and message[-1] == 0xF7 and all(byte <= 127 for byte in message[1:-1]):
         if len(message) > MAX_SYSEX_BYTES:
-            raise ValidationError(f"raw_midi: SysEx contains {len(message)} bytes; the maximum is {MAX_SYSEX_BYTES}")
-        summary = f"Imported MIDI: SysEx ({len(message)} bytes)"
-        warning = "The target device and effect model cannot be inferred from imported SysEx; the original MIDI bytes are preserved."
-        return CompiledAction((message,), summary, "controller_read", (warning,))
-    raise ValidationError("raw_midi.message_hex: use one complete 3-byte CC or F0...F7 SysEx message with 7-bit data")
+            raise ValidationError(f"{kind}: SysEx contains {len(message)} bytes; the maximum is {MAX_SYSEX_BYTES}")
+        summary = f"SysEx ({len(message)} bytes)"
+        if imported:
+            warnings = ("The target device and effect model cannot be inferred from imported SysEx; the original MIDI bytes are preserved.",)
+    else:
+        allowed = "3-byte CC or F0...F7 SysEx" if imported else "CC, Program Change or F0...F7 SysEx"
+        raise ValidationError(f"{kind}.message_hex: use one complete {allowed} message with 7-bit data")
+    prefix = "Imported MIDI" if imported else label or "MIDI"
+    return CompiledAction((message,), f"{prefix}: {summary}", "controller_read" if imported else "user_defined", warnings)
 
 
 def compile_action(action: dict, profiles: Mapping[str, dict]) -> CompiledAction:
     """Compile a semantic assignment or preserve one imported raw MIDI message."""
     _object(action, "action")
-    if action.get("type") == "raw_midi":
+    if action.get("type") in ("raw_midi", "midi"):
         return _compile_raw_midi(action)
     device_id = _text(action.get("device_id"), "action.device_id")
     if device_id not in profiles:

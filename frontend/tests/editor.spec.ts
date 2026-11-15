@@ -69,6 +69,41 @@ test('preserves imported CC/SysEx bytes and native-bank metadata until intention
   await page.getByTestId('action-edit-0').click();await page.getByTestId('raw-value').fill('65');await page.getByTestId('action-save').click();await expect(page.getByTestId('action-editor')).toHaveCount(0);expect(state.get().project!.pages[0].switches.A.states[0].actions[0].message_hex).toBe('B3 11 41');expect(state.get().project!.pages[0].switches.A.states[0].native_bank).toEqual(project.pages[0].switches.A.states[0].native_bank);
   await page.getByTestId('switch-B').click();await page.getByTestId('action-edit-0').click();await expect(page.getByTestId('raw-hex')).toHaveValue('F0 00 59 01 02 F7');await page.getByTestId('action-save').click();await expect(page.getByTestId('action-editor')).toHaveCount(0);expect(state.get().project!.pages[0].switches.B.states[0].actions[0].message_hex).toBe('F0 00 59 01 02 F7');
 });
+test('creates named CC and Program Change commands without profiles and edits them without changing type',async({page})=>{
+  const state=await fixture(page,emptyProject(),[]);
+  await page.getByTestId('add-action').click();
+  await expect(page.getByTestId('action-source')).toHaveValue('midi');
+  await page.getByTestId('midi-label').fill('Delay on');
+  await page.getByTestId('midi-channel').fill('16');await page.getByTestId('raw-cc').fill('64');await page.getByTestId('raw-value').fill('127');
+  await page.getByTestId('action-save').click();await expect(page.getByTestId('action-editor')).toHaveCount(0);
+  await expect(page.getByTestId('action-0')).toContainText('Delay on');
+  await page.getByTestId('add-action').click();await page.getByTestId('midi-kind').selectOption('pc');
+  await page.getByTestId('midi-channel').fill('4');await page.getByTestId('raw-cc').fill('127');
+  await page.getByTestId('action-save').click();await expect(page.getByTestId('action-editor')).toHaveCount(0);
+  expect(state.get().compiled!.pages[0].switches.A.states[0].messages_hex).toEqual(['BF 40 7F','C3 7F']);
+  await page.getByTestId('action-edit-1').click();await expect(page.getByTestId('midi-kind')).toHaveValue('pc');
+  await expect(page.getByTestId('midi-channel')).toHaveValue('4');await expect(page.getByTestId('raw-value')).toHaveCount(0);
+  await page.getByTestId('raw-cc').fill('0');await page.getByTestId('action-save').click();await expect(page.getByTestId('action-editor')).toHaveCount(0);
+  expect(state.get().project!.pages[0].switches.A.states[0].actions).toEqual([{type:'midi',message_hex:'BF 40 7F',label:'Delay on'},{type:'midi',message_hex:'C3 00'}]);
+});
+
+test('creates generic SysEx with a profile installed, rejects invalid frames and mixed banks',async({page})=>{
+  await page.setViewportSize({width:412,height:915});
+  const state=await fixture(page,emptyProject());
+  await page.getByTestId('add-action').click();await page.getByTestId('action-source').selectOption('midi');
+  await page.getByTestId('midi-kind').selectOption('sysex');await page.getByTestId('midi-label').fill('Custom pedal');
+  await page.getByTestId('raw-hex').fill('F0 41 80 F7');await page.getByTestId('action-save').click();
+  await expect(page.getByRole('alert')).toContainText('7-bit data');
+  expect(state.get().project!.pages[0].switches.A.states[0].actions).toEqual([]);
+  await page.getByTestId('raw-hex').fill('f041017ff7');await page.getByTestId('action-save').click();await expect(page.getByTestId('action-editor')).toHaveCount(0);
+  expect(state.get().compiled!.pages[0].switches.A.states[0].messages_hex).toEqual(['F0 41 01 7F F7']);
+  await page.getByTestId('action-edit-0').click();await expect(page.getByTestId('midi-kind')).toHaveValue('sysex');await expect(page.getByTestId('midi-label')).toHaveValue('Custom pedal');
+  await expect(page.getByTestId('raw-hex')).toHaveValue('F0 41 01 7F F7');await noOverflow(page);await page.getByRole('button',{name:'Cancel',exact:true}).click();
+  await page.getByTestId('add-action').click();await page.getByTestId('action-source').selectOption('midi');await page.getByTestId('action-save').click();
+  await expect(page.getByTestId('action-editor').getByRole('alert')).toContainText('cannot mix');
+  expect(state.get().project!.pages[0].switches.A.states[0].actions).toHaveLength(1);
+});
+
 test('a preset selection is a Program Change row and the preset volume a TANK SysEx',async({page})=>{
   const state=await fixture(page,emptyProject());
   await page.getByTestId('add-action').click();await page.getByTestId('action-kind').selectOption('select_preset');await page.getByTestId('action-preset').selectOption({label:'2B'});await expect(page.getByText('Select preset 2B · Program Change 4')).toBeVisible();await page.getByTestId('action-save').click();await expect(page.getByTestId('action-editor')).toHaveCount(0);

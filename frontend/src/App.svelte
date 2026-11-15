@@ -156,6 +156,12 @@
     if(succeeded)actionEditor=null;else actionError=error;
   }
   function actionInfo(action:Action) {
+    if(action.type==='midi'){
+      const bytes=((action.message_hex||'').replace(/\s/g,'').match(/../g)||[]).map(v=>parseInt(v,16));
+      const type=bytes[0]===240?'SysEx':(bytes[0]&240)===192?'PC':'CC';
+      const command=type==='SysEx'?`SysEx · ${bytes.length} bytes`:type==='PC'?`Program Change ${bytes[1]}`:`CC ${bytes[1]} = ${bytes[2]}`;
+      return {title:action.label||command,sub:`${action.label?command+' · ':''}${type==='SysEx'?'MIDI command':`MIDI channel ${(bytes[0]&15)+1}`}`,value:type,icon:'file'};
+    }
     if(action.type==='raw_midi'){
       const bytes=(action.message_hex||'').trim().split(/\s+/).map(v=>parseInt(v,16));
       return {title:bytes[0]===240?'Imported SysEx':`CC ${bytes[1]} = ${bytes[2]}`,sub:bytes[0]===240?`Original MIDI · ${bytes.length} bytes`:`Imported MIDI · channel ${(bytes[0]&15)+1}`,value:'RAW',icon:'file'};
@@ -221,7 +227,7 @@
             <div class="state-tabs" aria-label="Switch states">{#each currentSwitch.states as state,index}<button class:active={stateIndex===index} on:click={()=>stateIndex=index} data-testid={`state-${index}`}><span class="dot"></span>{currentSwitch.mode==='single'?'Sequence':`State ${index+1}`}<span class="state-count">{state.actions.length}</span></button>{/each}</div>
             <div class="state-content"><label>State name<input value={currentState.label} on:change={e=>textChange(e,(p,text)=>p.pages[pageIndex].switches[switchId].states[stateIndex].label=text)} disabled={locked} data-testid="state-name" /></label>
               <div class="action-list" data-testid="action-list">{#each currentState.actions as action,index}{@const info=actionInfo(action)}<article class="action-row" data-testid={`action-${index}`}><span class="action-index">{String(index+1).padStart(2,'0')}</span><span class="action-icon"><Icon name={info.icon}/></span><div class="action-description"><strong>{info.title}</strong><span>{info.sub}</span><span class="value-badge" class:on={info.value==='ON'} class:experimental={info.value==='EXPERIMENTAL'}>{info.value}</span></div><div class="action-controls"><button class="icon-button" aria-label={`Move action ${index+1} up`} disabled={locked||index===0} on:click={()=>moveAction(index,-1)}><Icon name="up" size={15}/></button><button class="icon-button" aria-label={`Move action ${index+1} down`} disabled={locked||index===currentState!.actions.length-1} on:click={()=>moveAction(index,1)}><Icon name="down" size={15}/></button><button class="icon-button" aria-label={`Edit action ${index+1}`} disabled={locked} on:click={()=>{actionError='';actionEditor={original:action,index};}} data-testid={`action-edit-${index}`}><Icon name="edit" size={15}/></button><button class="icon-button danger-button" aria-label={`Remove action ${index+1}`} disabled={locked} on:click={()=>danger('Remove this action?',`Remove “${info.title}” from this state?`,async()=>{await mutate(p=>p.pages[pageIndex].switches[switchId].states[stateIndex].actions.splice(index,1));})} data-testid={`action-remove-${index}`}><Icon name="trash" size={15}/></button></div></article>{:else}<div class="empty-sequence"><span class="empty-icon"><Icon name="bolt" size={27}/></span><strong>Your sequence starts here.</strong><p>Add an action to control an effect<br />or set a parameter.</p></div>{/each}</div>
-              <button class="add-action-button" on:click={()=>{actionError='';actionEditor={original:null,index:-1};}} disabled={locked||!snapshot?.profiles.length||currentState.actions.some(a=>a.type==='reload_current_preset')||currentState.actions.length>=128} data-testid="add-action"><Icon name="plus"/>Add action</button>
+              <button class="add-action-button" on:click={()=>{actionError='';actionEditor={original:null,index:-1};}} disabled={locked||currentState.actions.some(a=>a.type==='reload_current_preset')||currentState.actions.length>=128} data-testid="add-action"><Icon name="plus"/>Add action</button>
               {#if currentState.actions.some(a=>a.type==='reload_current_preset')}<p class="field-hint amber-text">Reload current preset must be the only action in this state.</p>{/if}
             </div>
           </section>

@@ -18,12 +18,16 @@
   let enabled = original?.value === false ? 'off' : 'on';
   let value = typeof original?.value === 'number' ? original.value : 0;
   let rawHex = original?.message_hex || '';
-  const originalBytes = rawHex.trim().split(/\s+/).map(v=>parseInt(v,16));
-  const rawIsSysex = originalBytes[0] === 0xf0;
+  const originalBytes = (rawHex.replace(/\s/g,'').match(/../g)||[]).map(v=>parseInt(v,16));
+  let midiKind = originalBytes[0]===0xf0 ? 'sysex' : (originalBytes[0]&0xf0)===0xc0 ? 'pc' : 'cc';
+  let midiLabel = original?.label || '';
+  let source = original?.type==='midi'||!profiles.length ? 'midi' : 'profile';
+  $: rawIsSysex = midiKind==='sysex';
   let rawChannel = (originalBytes[0] & 15) + 1;
   let rawCC = originalBytes[1] || 0;
   let rawValue = originalBytes[2] || 0;
   let localError = '';
+  $: midiSummary = rawIsSysex ? 'SysEx · complete F0 … F7 message' : `Channel ${rawChannel} · ${midiKind==='pc'?`Program Change ${rawCC}`:`CC ${rawCC} = ${rawValue}`}`;
   $: profile = profiles.find(p=>p.id===profileId);
   $: block = profile?.blocks.find(b=>b.id===blockId);
   $: model = block?.models.find(m=>m.id===modelId);
@@ -42,11 +46,12 @@
   $: hasToggles = !!profile?.blocks.some(b=>b.toggle);
   $: canModel = profile?.protocol === 'midi_cc' && model?.cc!==undefined;
   $: existingTankModel = original?.type==='model' && profile?.protocol==='tank_v09';
-  $: summary = kind==='raw_midi' ? (rawIsSysex ? 'Imported SysEx · original bytes retained' : `Imported CC · channel ${rawChannel} · CC ${rawCC} = ${rawValue}`) : kind==='reload_current_preset' ? 'Reload the whole saved preset' : kind==='select_preset' ? `Select preset ${presetNames[value] ?? value} · Program Change ${value}` : kind==='preset_volume' ? `Preset volume = ${value}` : kind==='toggle' ? `${model?.label || block?.label || 'Effect'} · TOGGLE (CC ${block?.toggle?.cc ?? '?'})` : kind==='model'?`Select model · ${model?.label || 'Effect'}`:kind==='parameter' ? `${model?.label || 'Effect'} · ${parameter?.label || 'Parameter'} = ${value}` : `${model?.label || block?.label || 'Effect'} · ${enabled.toUpperCase()}`;
+  $: summary = kind==='midi' ? `${midiLabel.trim()?midiLabel.trim()+' · ':''}${midiSummary}` : kind==='raw_midi' ? (rawIsSysex ? 'Imported SysEx · original bytes retained' : `Imported CC · channel ${rawChannel} · CC ${rawCC} = ${rawValue}`) : kind==='reload_current_preset' ? 'Reload the whole saved preset' : kind==='select_preset' ? `Select preset ${presetNames[value] ?? value} · Program Change ${value}` : kind==='preset_volume' ? `Preset volume = ${value}` : kind==='toggle' ? `${model?.label || block?.label || 'Effect'} · TOGGLE (CC ${block?.toggle?.cc ?? '?'})` : kind==='model'?`Select model · ${model?.label || 'Effect'}`:kind==='parameter' ? `${model?.label || 'Effect'} · ${parameter?.label || 'Parameter'} = ${value}` : `${model?.label || block?.label || 'Effect'} · ${enabled.toUpperCase()}`;
 
   // Device-wide actions have no block, model or address; their fields are removed on save.
   const deviceKinds=['reload_current_preset','select_preset','preset_volume'];
   const targetFields=['block_id','model_id','param_id','preset','preset_id','preset_index','preset_number','index','address','offset','memory_type','opcode','length','data'];
+  function selectSource() { localError=''; kind=source==='midi'?'midi':'enable'; if(source==='profile')selectProfile(); }
   function selectProfile() { blockId=profiles.find(p=>p.id===profileId)?.blocks[0]?.id || ''; selectBlock(); }
   function selectBlock() {
     const selected=profiles.find(p=>p.id===profileId)?.blocks.find(b=>b.id===blockId);
@@ -71,21 +76,24 @@
   }
   if(!parameterId) { parameterId=profiles.find(p=>p.id===profileId)?.blocks.find(b=>b.id===blockId)?.models.find(m=>m.id===modelId)?.parameters[0]?.id || ''; if(!original)selectParameter(); }
   if(!original){const p=profiles.find(p=>p.id===profileId),b=p?.blocks.find(b=>b.id===blockId),m=b?.models.find(m=>m.id===modelId);kind=p?.protocol==='tank_v09'||b?.enable?'enable':m?.parameters.length?'parameter':m?.cc!==undefined?'model':'enable';}
+  if(!original&&!profiles.length)kind='midi';
   function accept() {
     localError='';
     try {
       let action:Action;
-      if(kind==='raw_midi') {
+      if(kind==='raw_midi'||kind==='midi') {
         let hex=rawHex;
         if(!rawIsSysex) {
-          if(!Number.isInteger(rawChannel)||rawChannel<1||rawChannel>16||!Number.isInteger(rawCC)||rawCC<0||rawCC>127||!Number.isInteger(rawValue)||rawValue<0||rawValue>127)throw Error('Use a channel from 1 to 16 and CC/value from 0 to 127.');
-          hex=[0xb0+rawChannel-1,rawCC,rawValue].map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+          if(!Number.isInteger(rawChannel)||rawChannel<1||rawChannel>16||!Number.isInteger(rawCC)||rawCC<0||rawCC>127||(midiKind==='cc'&&(!Number.isInteger(rawValue)||rawValue<0||rawValue>127)))throw Error('Use a channel from 1 to 16 and MIDI numbers/values from 0 to 127.');
+          const bytes=midiKind==='pc'?[0xc0+rawChannel-1,rawCC]:[0xb0+rawChannel-1,rawCC,rawValue];
+          hex=bytes.map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(' ');
         }
         const clean=hex.replace(/\s/g,'');
         if(!/^(?:[a-fA-F0-9]{2})+$/.test(clean))throw Error('Enter complete hexadecimal MIDI bytes.');
         const bytes=clean.match(/.{2}/g)!.map(v=>parseInt(v,16));
         if(rawIsSysex && !(bytes.length>=2&&bytes.length<=127&&bytes[0]===240&&bytes[bytes.length-1]===247&&bytes.slice(1,-1).every(v=>v<=127)))throw Error('Use a complete F0 … F7 message, with 7-bit data and at most 127 bytes.');
-        action={...original,type:'raw_midi',message_hex:bytes.map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(' ')};
+        action={...original,type:kind,message_hex:bytes.map(v=>v.toString(16).padStart(2,'0').toUpperCase()).join(' ')};
+        if(kind==='midi'){if(midiLabel.trim())action.label=midiLabel.trim();else delete action.label;}
       } else if(kind==='reload_current_preset') {
         if(!reloadAllowed)throw Error('Reload must be the only action in this state.');
         action={...original,device_id:profileId,type:kind};
@@ -119,15 +127,21 @@
 
 <div class="modal-backdrop">
   <div class="modal action-modal" role="dialog" aria-modal="true" aria-labelledby="action-title" data-testid="action-editor" tabindex="-1" use:trapFocus>
-    <header class="modal-header"><div><span class="eyebrow">{original ? 'EDIT ACTION' : 'NEW ACTION'}</span><h2 id="action-title">{kind==='raw_midi' ? 'Imported MIDI command' : original ? 'Edit action' : 'Build your action'}</h2></div><button class="icon-button" aria-label="Close action editor" on:click={()=>dispatch('close')} disabled={saving}><Icon name="close" /></button></header>
+    <header class="modal-header"><div><span class="eyebrow">{original ? 'EDIT ACTION' : 'NEW ACTION'}</span><h2 id="action-title">{kind==='midi' ? 'MIDI command' : kind==='raw_midi' ? 'Imported MIDI command' : original ? 'Edit action' : 'Build your action'}</h2></div><button class="icon-button" aria-label="Close action editor" on:click={()=>dispatch('close')} disabled={saving}><Icon name="close" /></button></header>
     <div class="modal-body">
-      {#if kind==='raw_midi'}
-        <p class="muted">Chocolate Plus stores MIDI commands. Target devices and effect models cannot be inferred from these bytes.</p>
+      {#if !original}<label>Command source<select bind:value={source} on:change={selectSource} data-testid="action-source"><option value="profile" disabled={!profiles.length}>Device profile</option><option value="midi">MIDI command · no profile needed</option></select></label>{/if}
+      {#if kind==='raw_midi'||kind==='midi'}
+        {#if kind==='midi'}
+          <label>Name (optional)<input bind:value={midiLabel} placeholder="e.g. Delay on" data-testid="midi-label" /></label>
+          <label>Message type<select bind:value={midiKind} data-testid="midi-kind"><option value="cc">Control Change (CC)</option><option value="pc">Program Change</option><option value="sysex">System Exclusive (SysEx)</option></select></label>
+          <p class="field-hint">Use the commands documented by your device. A state can contain CC and Program Change, or up to 127 SysEx bytes.</p>
+        {:else}<p class="muted">Chocolate Plus stores MIDI commands. Target devices and effect models cannot be inferred from these bytes.</p>{/if}
         {#if rawIsSysex}
           <label>SysEx message (hex)<textarea class="hex-input" rows="6" bind:value={rawHex} spellcheck="false" data-testid="raw-hex"></textarea></label>
-          <p class="field-hint">One complete F0 … F7 message · up to 127 bytes. The original message is preserved until you save an edit.</p>
+          <p class="field-hint">One complete F0 … F7 message · hexadecimal bytes · 7-bit data · up to 127 bytes.</p>
         {:else}
-          <div class="form-grid"><label>MIDI channel<input type="number" min="1" max="16" bind:value={rawChannel} /></label><label>CC number<input type="number" min="0" max="127" bind:value={rawCC} data-testid="raw-cc" /></label><label>Value<input type="number" min="0" max="127" bind:value={rawValue} data-testid="raw-value" /></label></div>
+          <div class="form-grid"><label>MIDI channel<input type="number" min="1" max="16" bind:value={rawChannel} data-testid="midi-channel" /></label><label>{midiKind==='pc'?'Program number':'CC number'}<input type="number" min="0" max="127" bind:value={rawCC} data-testid="raw-cc" /></label>{#if midiKind==='cc'}<label>Value<input type="number" min="0" max="127" bind:value={rawValue} data-testid="raw-value" /></label>{/if}</div>
+          {#if midiKind==='pc'}<p class="field-hint">Program numbers are 0–127. If your device labels presets 1–128, subtract 1.</p>{/if}
         {/if}
       {:else}
         <label>Device profile<select bind:value={profileId} on:change={selectProfile} disabled={existingTankModel}>{#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></label>

@@ -106,6 +106,15 @@ Chocolate's MIDI assignments, not a connected TANK's active effect settings.
 
 ## Device-profile extensions
 
+For direct commands, choose **Add action → Command source → MIDI command**.
+CC, Program Change and complete SysEx messages can be entered and named in
+the interface without a profile or code. A generic action stores `type: midi`,
+`message_hex`, and an optional `label`; it has no device/effect fields. The
+compiler validates the MIDI frame and uses the existing Chocolate bank limits.
+Program numbers are zero-based (0–127), and Bank Select can be composed from
+CC 0/32 followed by Program Change. The device's manual defines the required
+values, SysEx framing and checksums. Live state queries remain TANK-specific.
+
 Built-in definitions are JSON files in `midi_configurator/profiles/`, packaged
 inside the executable. Imported definitions are stored in `profiles/` beside
 the portable app. Import through **Device profiles**, or export an existing
@@ -145,8 +154,8 @@ in Program Change order (1 to 128 unique names), and the action stores the
 Program Change number as `value`, with a MIDI `channel`. `preset_volume` and
 `reload_current_preset` are TANK writes, so they need a `tank_v09` profile.
 Each needs its declaration; a project cannot use an action the profile does not
-offer. A device with more than 128 presets would also need Bank Select, which
-is not implemented.
+offer. For a device with more than 128 presets, add its documented Bank Select
+CC commands before Program Change using the generic MIDI editor.
 
 The Chocolate stores no device information, so the read summary relies on
 these decoders to name commands. `tank_v09` has one: ON/OFF, model, parameter,
