@@ -1,0 +1,1 @@
+Make the Android APK reproducible across GitHub and F-Droid build environments by sorting Python asset metadata. Includes the generic CC, Program Change and SysEx editor, Chocolate Plus USB configuration with backups, the TANK Mini V09 profile and Android Live view.

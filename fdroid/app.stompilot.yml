@@ -13,15 +13,16 @@ Repo: https://github.com/danmigdev/stompilot
 Binaries: https://github.com/danmigdev/stompilot/releases/download/v%v/Stompilot.apk
 
 Builds:
-  - versionName: 0.4.1
-    versionCode: 2
-    commit: v0.4.1
+  - versionName: 0.4.2
+    versionCode: 3
+    commit: v0.4.2
     subdir: android
     sudo:
       - apt-get update
       - apt-get install -y nodejs npm
     gradle:
       - yes
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
     prebuild:
       - cd ../frontend
       - npm ci --no-audit --no-fund
@@ -35,5 +36,5 @@ AutoUpdateMode: Version
 UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
 UpdateCheckData: android/app/build.gradle.kts|versionCode = (\d+)|android/app/build.gradle.kts|versionName
   = "([^"]+)"
-CurrentVersion: 0.4.1
-CurrentVersionCode: 2
+CurrentVersion: 0.4.2
+CurrentVersionCode: 3

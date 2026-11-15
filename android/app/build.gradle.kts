@@ -39,8 +39,8 @@ android {
         applicationId = "app.stompilot"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.4.1"
+        versionCode = 3
+        versionName = "0.4.2"
         ndk {
             // Phones are arm64. Each ABI adds a Python runtime, so the emulator's
             // x86_64 is built only on request: gradlew assembleDebug -Pabis=x86_64
@@ -92,6 +92,22 @@ tasks.named("preBuild") {
 // Tasks that read the copies must say so, or Gradle rejects the build.
 tasks.matching { it.name.endsWith("PythonSources") }.configureEach { dependsOn(syncPythonPackage) }
 tasks.matching { it.name.endsWith("Assets") }.configureEach { dependsOn(syncInterface) }
+
+// Chaquopy's asset hashes are correct, but their JSON key order can vary between
+// filesystems/JDKs. Canonicalize the generated manifest before APK packaging so
+// F-Droid can reproduce the release and retain the upstream signing certificate.
+tasks.matching { it.name.endsWith("PythonBuildAssets") }.configureEach {
+    doLast {
+        val manifest = outputs.files.asFileTree.single { it.name == "build.json" }
+        @Suppress("UNCHECKED_CAST")
+        val data = groovy.json.JsonSlurper().parse(manifest) as Map<String, Any?>
+        val ordered = data.toSortedMap().mapValues { (key, value) ->
+            @Suppress("UNCHECKED_CAST")
+            if (key == "assets") (value as Map<String, String>).toSortedMap() else value
+        }
+        manifest.writeText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(ordered)) + "\n")
+    }
+}
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")

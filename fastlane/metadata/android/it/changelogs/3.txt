@@ -1,0 +1,1 @@
+APK Android riproducibile negli ambienti GitHub e F-Droid grazie all'ordinamento dei metadati Python. Include l'editor generico CC, Program Change e SysEx, la configurazione USB di Chocolate Plus con backup, il profilo TANK Mini V09 e la vista Live Android.
