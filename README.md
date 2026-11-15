@@ -19,9 +19,13 @@ the app used to open the APK. The release is signed with the certificate whose
 SHA-256 fingerprint is in [android/release-signing-certificate.sha256](android/release-signing-certificate.sha256).
 If an earlier development APK is installed with a different signing key, export
 your projects and profiles before uninstalling it and installing this release.
-The [official F-Droid submission](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/57500)
-uses the [build recipe](fdroid/app.stompilot.yml) and is awaiting review;
-catalog availability depends on F-Droid approval and publication.
+Stompilot is not yet available in the official F-Droid catalog. The
+[initial submission](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/57500)
+was closed during review because its description did not follow the inclusion
+template and the reviewer raised the minimum development-history requirement.
+The [build recipe](fdroid/app.stompilot.yml) passed all nine CI checks, including
+verification against the signed release APK. Catalog inclusion still requires
+F-Droid approval.
 
 Download **Stompilot.exe** from this repository's **Releases** page
 and open it from a writable folder. The portable Windows app includes its Python

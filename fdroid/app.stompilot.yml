@@ -15,7 +15,7 @@ Binaries: https://github.com/danmigdev/stompilot/releases/download/v%v/Stompilot
 Builds:
   - versionName: 0.4.3
     versionCode: 4
-    commit: v0.4.3
+    commit: 4ea633e8cc968f4430f6cb2cd93bbf17e69b6329
     subdir: android
     sudo:
       - apt-get update
