@@ -1,12 +1,11 @@
 """Offline integrity and tamper-rejection checks; requires the local build."""
 import shutil
-import struct
 import tempfile
 import unittest
 from pathlib import Path
 
 from inspect_firmware import APP_BASE, HERE, crc, inspect_container, jlfs_entry, sfc
-from package_sysex_pacing import (HOOKS, PATCH_OFFSET, RESOURCE_HEADER, decode_branch, entry_bytes, patch_flash, read_build,
+from package_sysex_pacing import (HOOKS, PATCH_OFFSET, decode_branch, entry_bytes, patch_flash, read_build,
                               rebuild_container, validate_flash, validate_package)
 
 

@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 *.log
 .backups/
+# Generated desktop, frontend and Android build output.
 build/
 dist/
 # Personal device snapshots, imports and development previews.
@@ -15,17 +16,14 @@ dist/
 .env.*
 *.dmp
 /m-vave-report/
-/research/chocolate-firmware/artifacts/
 /settings.json
+# Local implementation history; current guidance is in README.md and docs/usage.md.
+/docs/plans/
 frontend/node_modules/
-frontend/build/
-frontend/.svelte-kit/
 frontend/test-results/
 frontend/playwright-report/
-# Android build output and machine-specific SDK path.
+# Android tooling caches and machine-specific SDK path.
 android/.gradle/
 android/.idea/
 android/.kotlin/
-android/app/build/
-android/build/
 android/local.properties

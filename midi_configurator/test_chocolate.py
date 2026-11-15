@@ -14,7 +14,7 @@ from .core import ValidationError, load_config, load_profiles, save_config
 from .project import new_project
 from .test_core import (
     FX_OFF, FX_ON, RELOAD_CURRENT, REV_MIX_10, REV_MIX_5, cc_fixture, config_fixture,
-    enabled, mix, reload_profile_fixture, tank_fixture,
+    enabled, reload_profile_fixture, tank_fixture,
 )
 
 

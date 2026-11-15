@@ -45,8 +45,9 @@ bytes after `0x27700`, including Bluetooth, calibration and user configuration.
 
 The old save-fix candidate was **never installed and has been withdrawn**:
 its proposed placement overlapped `config.dat` and `md5.bin`. Its generated
-images were removed and its packager disabled. Configuration saving remains
-the separate verified Stompilot implementation.
+images were removed. The retired sources, build scripts and tests are kept
+only in the local, ignored `artifacts/retired-save-fix-20261115.zip` archive.
+Configuration saving remains the separate verified Stompilot implementation.
 
 ## Reproduce the offline candidate
 

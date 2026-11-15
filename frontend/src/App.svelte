@@ -6,7 +6,7 @@
   import {displayProfile} from './profiles';
   import {request, isBrowserPreview, isAndroid} from './bridge';
   import LiveView from './LiveView.svelte';
-  import type {Action, Page, Project, Snapshot, State} from './types';
+  import type {Action, Page, Project, Snapshot} from './types';
 
   let snapshot:Snapshot|null=null;
   let loading=true, pending=false, browserPreview=false;
