@@ -270,6 +270,40 @@ a human-readable summary, not a native MidiSuite import file.
 More technical context is in [development and usage notes](docs/usage.md) and the
 [Chocolate protocol notes](research/chocolate_protocol.md).
 
+## Check the TANK commands on the device
+
+Connect the TANK Mini to the PC by USB, close other MIDI editors, and run from
+the source folder:
+
+```powershell
+.\.venv\Scripts\python.exe -m midi_configurator.tank_check show
+.\.venv\Scripts\python.exe -m midi_configurator.tank_check memory
+.\.venv\Scripts\python.exe -m midi_configurator.tank_check listen mod
+.\.venv\Scripts\python.exe -m midi_configurator.tank_check relay
+```
+
+- `show` reads the current preset: each block's ON/OFF, model, and values,
+  and what differs from the saved preset. An ON/OFF action such as **Tremolo
+  ON** turns on whatever model the preset has in that block, so check here
+  that MOD is Tremolo.
+- `memory` sends every ON/OFF, model, and parameter command of the profile, as
+  the exact bytes Stompilot writes to the Chocolate Plus, and reads the TANK's
+  memory back after each one. Only the bytes the command names may change.
+  Models and parameters are checked with their block off, so test values are
+  not heard. It ends with the preset volume, a change to the next preset and
+  back (briefly audible), and the reload.
+- `listen` turns on each model and alternates each parameter between a quarter
+  and three quarters of its range; answer whether you hear it. Name a block
+  (`fx`, `amp`, `mod`, `dly`, `rev`, `cab`) and optionally model IDs.
+- `relay` needs the Chocolate Plus on USB too (switch on U). It forwards each
+  press to the TANK and shows what changed, so it checks the switches as
+  written to the controller.
+
+Each check writes only the TANK's live patch, never a saved preset: it compares
+the saved presets in RAM and flash before and after, and restores the live
+patch when it ends (`relay --keep` keeps the changes). A JSON report goes to
+`research/tank-checks/`.
+
 ## Run or build from source
 
 Source development requires Python 3.12 or later, Node.js 20.19 or later, and

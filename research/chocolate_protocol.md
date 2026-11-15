@@ -90,6 +90,11 @@ Each advanced switch has one mode byte, 16 five-byte MIDI rows for Bank A,
 enabled, MIDI channel, type, data 1, and data 2. Controller pages and a switch's
 alternating banks are separate concepts.
 
+The type byte is `00` for Program Change (data 1 is the program number), `01`
+for CC, and `04` for SysEx. MidiSuite fills unused rows of a fresh controller
+with enabled Program Change 0 rows. On 2026-10-16 a `FootCtrlPlus_013` row
+`01 00 00 04 00` sent `C0 04` over USB, which loaded TANK preset 2B.
+
 A SysEx bank has one enabled row `01 00 04 00 00` (enabled, channel 1, type 4).
 Its 128-byte SysEx area is:
 

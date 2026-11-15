@@ -3,8 +3,10 @@
 The stock V09 firmware exposes a path that can restore the saved version of the
 currently selected preset without changing its index. The implementation in
 Stompilot is experimental: the packet encoding and normal-mode firmware path
-have been checked statically, but the complete physical Chocolate-to-TANK reload
-has not been tested.
+have been checked statically. On 2026-10-16, sent to a `TANK MINI_009` over its
+own USB by `tank_check memory`, it restored the saved preset exactly, with the
+preset index unchanged. The reload through the Chocolate Plus HOST port has not
+been tested.
 
 ## Packet
 

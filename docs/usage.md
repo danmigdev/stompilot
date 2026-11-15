@@ -220,6 +220,8 @@ packet and static V09 normal-mode path.
 - `midi_configurator/chocolate_transport.py`: native USB configuration protocol.
 - `midi_configurator/chocolate_persistence.py`: audited stock V13 sector saving,
   durable complete backups, interruption recovery and restart verification.
+- `midi_configurator/tank_check.py`: checks the TANK profile's commands on a
+  TANK connected by USB.
 - `frontend/src/LiveView.svelte`: the Android live view.
 - `midi_configurator/project.py`: empty projects and example helpers.
 - `midi_configurator/runtime_paths.py`: bundled resources and writable storage.
