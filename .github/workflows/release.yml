@@ -1,4 +1,4 @@
-name: Release Windows app
+name: Release Android and Windows apps
 
 on:
   push:
@@ -174,9 +174,81 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  android:
+    name: Test, build and sign Android APK
+    if: github.event.deleted == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate Android version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)
+          test "$RELEASE_TAG" = "v$version"
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Build interface and Android app
+        run: |
+          npm --prefix frontend ci --no-audit --no-fund
+          npm --prefix frontend run build
+          cd android
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease
+
+      - name: Sign and verify release APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          umask 077
+          key="$RUNNER_TEMP/stompilot-release.p12"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$key"
+          mkdir -p dist
+          sdk="$ANDROID_HOME/build-tools/35.0.0"
+          "$sdk/apksigner" sign --ks "$key" --ks-key-alias "$ANDROID_KEYSTORE_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --out dist/Stompilot.apk android/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$sdk/apksigner" verify --verbose --print-certs dist/Stompilot.apk | tee "$RUNNER_TEMP/apk-verification.txt"
+          expected=$(tr -d '[:space:]' < android/release-signing-certificate.sha256)
+          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apk-verification.txt")
+          test "$actual" = "$expected"
+          "$sdk/zipalign" -c -P 16 4 dist/Stompilot.apk
+          "$sdk/aapt" dump badging dist/Stompilot.apk | tee "$RUNNER_TEMP/apk-badging.txt"
+          ! grep -q application-debuggable "$RUNNER_TEMP/apk-badging.txt"
+
+      - name: Upload signed Android release
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-release
+          path: dist/Stompilot.apk
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish GitHub release
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -192,6 +264,16 @@ jobs:
         working-directory: dist
         run: sha256sum --check SHA256SUMS.txt
 
+      - name: Download signed Android APK
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: android-release
+          path: dist
+
+      - name: Include Android in release checksums
+        working-directory: dist
+        run: sha256sum Stompilot.apk Stompilot.exe tank_mini_live_boost.json > SHA256SUMS.txt
+
       - name: Create release with compiled assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -199,11 +281,15 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           cat > release-notes.md <<'NOTES'
+          Download **Stompilot.apk** for arm64 Android phones running Android 8 or later. This is a signed release APK. Export projects and profiles before replacing a development build signed with a different key.
+
           Download **Stompilot.exe** and run it from a writable folder. Microsoft Edge WebView2 Runtime is required; Python and Node.js are not required to run the app.
 
-          **tank_mini_live_boost.json** provides the Tremolo and solo-boost example. **SHA256SUMS.txt** contains the executable and example checksums.
+          Create named **CC, Program Change and SysEx** commands directly in the editor for other MIDI devices, without writing code or a profile. The built-in profile and Android Live state reading support TANK Mini. Chocolate Plus bank and USB compatibility limits still apply.
 
-          This release was built from the version tag on GitHub Actions after Python, browser interaction, and packaged desktop smoke tests passed. Tests use simulated controllers; physical USB writing and experimental preset reload retain the verification limits described in the README.
+          **tank_mini_live_boost.json** provides the Tremolo and solo-boost example. **SHA256SUMS.txt** contains the APK, executable and example checksums. Stompilot is licensed under **GPL-3.0-or-later**.
+
+          This release was built from the version tag on GitHub Actions after Python, browser interaction, Android unit and packaged desktop smoke tests passed. Tests use simulated controllers; physical USB writing and experimental preset reload retain the verification limits described in the README.
           NOTES
           printf '\n[Usage and screenshots](%s/%s/blob/%s/README.md) · [Build and tests](%s/%s/actions/runs/%s)\n' \
             "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA" \
@@ -213,6 +299,6 @@ jobs:
             flags+=(--prerelease --latest=false)
           fi
           gh release create "$RELEASE_TAG" \
-            dist/Stompilot.exe dist/tank_mini_live_boost.json dist/SHA256SUMS.txt \
+            dist/Stompilot.apk dist/Stompilot.exe dist/tank_mini_live_boost.json dist/SHA256SUMS.txt \
             --verify-tag --title "Stompilot $RELEASE_TAG" \
             --generate-notes --notes-file release-notes.md "${flags[@]}"

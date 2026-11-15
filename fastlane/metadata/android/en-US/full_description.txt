@@ -1,0 +1,13 @@
+Stompilot is a visual MIDI editor for the M-VAVE Chocolate Plus foot controller, with a built-in TANK Mini profile.
+
+Create projects with pages and switch assignments. Add effect on/off actions, MIDI CC toggles, parameter changes and preset selections, then inspect the MIDI messages for each switch state.
+
+For other MIDI devices, enter CC, Program Change or SysEx commands directly and give them optional names. No profile, programming or JSON editing is needed. Use the commands from your device's MIDI documentation. Each Chocolate bank supports 16 CC/Program Change rows or 127 SysEx bytes; these two formats cannot share a bank.
+
+Connect the Chocolate Plus by USB to read its configuration, preview your changes and write them with a backup and readback verification. The built-in TANK Mini profile targets stock V09 firmware; Chocolate Plus configuration writing supports firmware 12 through 16.
+
+The Android live view forwards footswitch messages from the Chocolate Plus to the TANK Mini and displays the page, switches and effect states. Connect both devices to the phone with a compatible, preferably powered USB hub. Keep the Chocolate Plus in USB mode (U).
+
+Import and export projects and device profiles as JSON files. The editor works offline and requires no account. USB features require a phone with USB MIDI host support and compatible hardware.
+
+Preset reload is experimental. Firmware research tools in the source repository are separate from the Android app and are not needed for normal use.

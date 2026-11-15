@@ -1,0 +1,1 @@
+Prima versione Android pubblica con licenza GPL-3.0-or-later. Crea comandi CC, Program Change e SysEx con un nome, senza profili o codice. Leggi e scrivi Chocolate Plus con backup e inoltra i pulsanti a TANK Mini nella vista Live a schermo intero. Include il profilo TANK Mini V09 e il supporto per i firmware Chocolate Plus 12–16.

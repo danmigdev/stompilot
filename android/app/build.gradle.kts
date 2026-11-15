@@ -33,6 +33,7 @@ val syncInterface by tasks.registering(Sync::class) {
 android {
     namespace = "app.stompilot"
     compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "app.stompilot"
@@ -71,6 +72,10 @@ android {
 chaquopy {
     defaultConfig {
         version = "3.12"
+        // Keep releases independent of the build host's Python bytecode version.
+        pyc {
+            src = false
+        }
         // Profiles are read from files beside the package.
         extractPackages("midi_configurator")
     }

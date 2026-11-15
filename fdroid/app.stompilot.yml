@@ -1,0 +1,39 @@
+Categories:
+  - Multimedia
+License: GPL-3.0-or-later
+AuthorName: Danilo Migliarino
+SourceCode: https://github.com/danmigdev/stompilot
+IssueTracker: https://github.com/danmigdev/stompilot/issues
+Changelog: https://github.com/danmigdev/stompilot/releases
+
+AutoName: Stompilot
+
+RepoType: git
+Repo: https://github.com/danmigdev/stompilot
+Binaries: https://github.com/danmigdev/stompilot/releases/download/v%v/Stompilot.apk
+
+Builds:
+  - versionName: 0.4.0
+    versionCode: 1
+    commit: v0.4.0
+    subdir: android
+    sudo:
+      - apt-get update
+      - apt-get install -y nodejs npm
+    gradle:
+      - yes
+    prebuild:
+      - cd ../frontend
+      - npm ci --no-audit --no-fund
+      - npm run build
+    scandelete:
+      - frontend/node_modules
+
+AllowedAPKSigningKeys: 97f9b9a35bc7ff98317fdfa8dcc7ec5e00f9a74294078569dffbbbc4ca790ae7
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags ^v[0-9]+\.[0-9]+\.[0-9]+$
+UpdateCheckData: android/app/build.gradle.kts|versionCode = (\d+)|android/app/build.gradle.kts|versionName
+  = "([^"]+)"
+CurrentVersion: 0.4.0
+CurrentVersionCode: 1

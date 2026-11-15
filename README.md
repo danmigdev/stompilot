@@ -1,11 +1,26 @@
 # Stompilot
 
-A visual MIDI configurator for Chocolate Plus, with a built-in TANK Mini profile
-and support for future device profiles. Create switch assignments, edit a local
-copy of the controller configuration, and apply it over USB when ready. Its
-Svelte interface runs in a Windows desktop window backed by a Python MIDI service.
+A visual MIDI configurator for Chocolate Plus on Android and Windows. Use the
+built-in TANK Mini profile or enter CC, Program Change and SysEx commands for
+other MIDI devices without writing code or installing a profile. Create switch
+assignments, edit a local copy of the controller configuration, and apply it
+over USB when ready. The app works offline without an account or tracking.
+
+Stompilot is free software under **GPL-3.0-or-later**; see [LICENSE](LICENSE).
+Copyright © 2026 Danilo Migliarino and contributors. You may use, study, share
+and modify it, including commercially, under that license. Dependencies retain
+their own licenses.
 
 ## Download and start
+
+Download **Stompilot.apk** from [Releases](https://github.com/danmigdev/stompilot/releases)
+for an arm64 Android phone running Android 8 or later. Allow installation from
+the app used to open the APK. The release is signed with the certificate whose
+SHA-256 fingerprint is in [android/release-signing-certificate.sha256](android/release-signing-certificate.sha256).
+If an earlier development APK is installed with a different signing key, export
+your projects and profiles before uninstalling it and installing this release.
+The official F-Droid submission uses the [build recipe](fdroid/app.stompilot.yml);
+catalog availability depends on F-Droid review and publication.
 
 Download **Stompilot.exe** from this repository's **Releases** page
 and open it from a writable folder. The portable Windows app includes its Python
@@ -79,6 +94,23 @@ Tuner or other special modes may defer it until normal mode resumes. It does
 not save or overwrite a preset. See the [reload protocol evidence](research/tank_preset_reload.md).
 
 ## Edit switches and actions
+
+Choose **Add action → Command source → MIDI command** to control a device
+without a profile. Give the command an optional name, then choose:
+
+- **Control Change (CC)**: channel 1–16, CC number and value 0–127.
+- **Program Change**: channel 1–16 and program number 0–127. Subtract 1 if the
+  device's manual labels programs 1–128. Bank Select can be entered as CC 0
+  and/or CC 32 before the Program Change, as documented by that device.
+- **System Exclusive (SysEx)**: one complete hexadecimal `F0 … F7` message
+  with 7-bit data, up to 127 bytes. Include any manufacturer-specific address,
+  device ID and checksum required by the device's MIDI documentation.
+
+Commands are stored in the project and shown in the MIDI preview. Each bank
+supports up to 16 CC/Program Change rows, or a total of 127 SysEx bytes;
+CC/Program Change and SysEx cannot share a bank. Compatibility depends on the
+target device's MIDI commands, connection and the Chocolate's forwarding
+capabilities. Automatic Live status reading remains specific to TANK Mini.
 
 Select a page and switch A-D, then choose **One sequence** or **Alternate two
 states**. Each state has its own ordered action list of effect actions and
@@ -201,8 +233,9 @@ new ID and name. TANK Mini stock V09 is the only bundled device profile.
 
 ![Device profiles page with TANK Mini information and JSON import/export](docs/screenshots/device-profiles.png)
 
-For another device using CC, adapt the [generic CC profile template](examples/generic_cc_profile.json).
-Other protocols can use a registered Python encoder. JSON profiles are data and
+Direct MIDI commands above need no profile. For reusable named CC controls,
+adapt the [generic CC profile template](examples/generic_cc_profile.json).
+Additional semantic integrations can use a registered Python encoder. JSON profiles are data and
 do not execute code. See [profile and encoder details](docs/usage.md#device-profile-extensions).
 
 ## Manual MidiSuite workflow
@@ -328,9 +361,9 @@ forwarding continues with the screen off.
 To use the desktop instead, move the hub's cable from the phone to the PC; a
 USB device has one host at a time.
 
-Build the app with **Build Android.cmd** (Node.js, a JDK 17 or later and the
+Build a development APK with **Build Android.cmd** (Node.js, JDK 21 and the
 Android SDK): it writes `dist\Stompilot.apk` for arm64 phones, Android 8 or
-later. Install it by copying it to the phone, or with
+later, signed with the local debug key. Install it by copying it to the phone, or with
 `adb install -r dist\Stompilot.apk`.
 
 ## Run or build from source
@@ -373,21 +406,38 @@ isolated browser fixture used by this README.
 
 ## Automatic releases
 
-Pushing a version tag runs the [Windows release workflow](.github/workflows/release.yml).
+Pushing a version tag runs the [Android and Windows release workflow](.github/workflows/release.yml).
 It installs dependencies, builds Svelte, runs the Python and browser tests,
 packages the EXE, and checks the packaged desktop app before publishing.
-The release contains `Stompilot.exe`, `tank_mini_live_boost.json`, and
+It also builds and signs the Android APK after the Android unit tests pass.
+The release contains `Stompilot.apk`, `Stompilot.exe`, `tank_mini_live_boost.json`, and
 `SHA256SUMS.txt`, with generated release notes and a link to its build results.
 
 After committing and pushing the changes to release:
 
 ```powershell
-git tag -a v0.3.4 -m "Stompilot v0.3.4"
-git push origin v0.3.4
+git tag -a v0.4.0 -m "Stompilot v0.4.0"
+git push origin v0.4.0
 ```
 
 Use a new `vMAJOR.MINOR.PATCH` tag for each release. A suffix such as
 `v0.4.0-beta.1` publishes a prerelease. Creating a tag locally does not trigger
 the workflow until it is pushed. Failed checks prevent publication; inspect
-the run under the repository's **Actions** tab. The workflow uses GitHub's
-automatic token, so no additional repository secrets are required.
+the run under the repository's **Actions** tab. Android releases require the
+repository secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_ALIAS`, and
+`ANDROID_KEYSTORE_PASSWORD`. The signing key is never stored in Git. Increment
+Android's `versionCode` and update `versionName` before each new Android release.
+
+An unsigned Android release can be built on Linux with JDK 21, Node.js 20.19 or
+later, Android SDK platform 35 and build tools 35.0.0:
+
+```sh
+npm --prefix frontend ci
+npm --prefix frontend run build
+cd android
+./gradlew --no-daemon assembleRelease
+```
+
+The APK is `android/app/build/outputs/apk/release/app-release-unsigned.apk`.
+The F-Droid recipe builds from the same sources and checks reproducibility
+against the signed APK attached to the GitHub release.
