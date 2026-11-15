@@ -40,7 +40,7 @@ def main():
                     "Configuration flash differs after restart")
             (output / "configuration-ram.bin").write_bytes(ram)
             (output / "configuration-flash.bin").write_bytes(flash)
-            report.update(status="native_U_verified_HOST_test_pending",app_sha256=writer.firmware_sha256,
+            report.update(status="native_U_verified_HOST_behavior_not_checked",app_sha256=writer.firmware_sha256,
                           module_sha256=PACING_SHA256,configuration_ram_sha256=sha(ram),
                           configuration_flash_sha256=sha(flash),normal_save_controls=True,
                           relocated_flash_driver_verified=True,ram_reads=2,mapped_flash_reads=2)

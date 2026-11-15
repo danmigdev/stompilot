@@ -1,16 +1,23 @@
 # Chocolate Plus V13: USB HOST MIDI pacing
 
-This experimental patch addresses consecutive TANK SysEx messages being sent
-in one USB transfer. Direct tests with the TANK accepted separated messages
-but did not apply the consecutive pair. The patch ends a HOST transfer at each
-SysEx terminator and yields the MIDI routing task for three ticks before a
-SysEx start. Ordinary messages and USB device-mode transfer layout retain the
+This experimental patch attempts to address consecutive TANK SysEx messages
+being sent in one USB transfer. Direct tests with the TANK accepted separated
+messages but did not apply the consecutive pair. The code is intended to end
+a HOST transfer at each SysEx terminator and yield the MIDI routing task for
+three ticks before a SysEx start. Ordinary messages and USB device-mode transfer layout retain the
 original behavior. Saved assignments are unchanged.
 
 On the tested Chocolate Plus, four sectors have been written and verified with
 two complete physical flash reads. After a cold restart in U, the complete
 running app, pacing module, relocated flash driver, normal save controls and
-configuration RAM/flash verified. **The physical A/B test in HOST is pending.**
+configuration RAM/flash verified. **The physical HOST test failed: A works,
+but B leaves the TANK FX LED off on both presses. This build is not a verified
+fix.** A subsequent RAM-only isolation test shortened B's first bank to the
+single FX ON message; the owner then observed FX turn on in HOST. This isolates
+the failure to the multi-message case, but does not establish its cause or
+prove that the patch's intended transfer boundaries and delay occur on USB.
+After this isolation test, the original configuration RAM, complete USRFLASH
+reservation and normal save controls were verified again.
 Private installation evidence is under `artifacts/sysex-install/`; no device
 backup, vendor firmware, loader binary, build output or personal path belongs
 in Git. The earlier investigation history is retained locally under ignored
@@ -61,6 +68,7 @@ python research/chocolate-firmware/inspect_firmware.py --download --version 012
 bash research/chocolate-firmware/disassemble.sh /path/to/jieli-toolchain 013
 bash research/chocolate-firmware/build_sysex_pacing.sh /path/to/jieli-toolchain
 python research/chocolate-firmware/trace_sysex_pacing.py
+python research/chocolate-firmware/trace_native_decoder.py
 python research/chocolate-firmware/test_package_sysex_pacing.py
 python research/chocolate-firmware/package_sysex_pacing.py
 ```
@@ -73,8 +81,12 @@ from the container's passing structural checks: the tested installation used
 the bounded raw-sector installer, not Bluetooth OTA or M-UPGRADE.
 
 Validation: 131,580 C checks with ASan/UBSan, 251 bounded instruction traces and
-16 packaging tests. The trace byte-checks instructions but stubs ROM decoding,
-memory copying and USB/scheduler functions; it is not hardware emulation.
+16 packaging tests. The original trace uses idealized MIDI decoder events.
+An additional 101 traces execute the actual relocated decoder instructions
+against raw MIDI ring buffers, including wrapped buffers, and still produce
+28- and 32-byte transfers for B. The decoder's RAM bytes were also read back
+from the device and matched the stock image. Memory copying and USB/scheduler
+functions remain stubs; these tests do not explain the failed hardware test.
 Windows diagnostic tests reject unrelated commands, ranges and device IDs.
 Installer tests cover partial operations, lost replies, failed blank checks,
 damaged programming, preserved regions and explicit restoration.
@@ -121,6 +133,14 @@ After verified programming, power-cycle in U and run
 checks. Then test with the TANK on HOST. Stompilot accepts this exact app and
 complete module hash for verified configuration saves; changing firmware
 during a pending save is rejected.
+
+`isolate_b_sysex.py` performs the bounded RAM-only single-message experiment
+and records its restoration. `read_host_ble.py` is a separate read-only
+research diagnostic: discovery by default; `--snapshot` checks the exact
+pacing hooks/module and reads fixed HOST RAM ranges through BLE. Its
+`--watch SECONDS` records buffer changes without writing configuration or
+firmware. Buffer samples can miss transfers and BLE traffic can affect timing;
+they are not a wire capture. Bluetooth support is not added to the application.
 
 **Recovery from an application that cannot boot remains unverified with only
 the normal USB cable.** Successful software-selected entry is not independent

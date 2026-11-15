@@ -239,7 +239,7 @@ a human-readable summary, not a native MidiSuite import file.
   the exact audited stock V13 code hash. It needs 16 unused bytes in an Advanced
   SysEx bank for temporary data; configurations with no suitable padding are
   rejected before mutation. No firmware patch is installed, and the pedal's
-  own save routines remain unchanged. See [verified saving](docs/usage.md#controller-write-scope).
+  own save routines remain unchanged. See the [investigation](research/chocolate-firmware/README.md).
   The new Stompilot writer also passed a physical V13 pattern-save, cold-start
   and original-restoration test, checking the full 24-KiB configuration at each
   stage. That application test changed inactive padding in one sector; it did

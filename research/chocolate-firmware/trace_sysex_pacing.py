@@ -1,6 +1,6 @@
 """Bounded offline trace of the stock USB builder plus linked pacing code.
 
-Every disassembled instruction is byte-checked. The ROM MIDI decoder, memcpy,
+Every disassembled instruction is byte-checked. The relocated MIDI decoder, memcpy,
 USB buffer lookup, status and scheduler delay are stubs. This exercises real
 control flow and register preservation, not the chip, USB timing or bootloader.
 """
@@ -75,7 +75,7 @@ class Machine:
             self.memory[address+i] = value >> (8*i) & 255
 
     def memory_operand(self, expr):
-        m = re.fullmatch(r"(b|h)?\[(.*?)\](?: \(u\))?", expr)
+        m = re.fullmatch(r"(b|h)?\[(.*?)\](?: \([us]\))?", expr)
         require(m is not None, f"Unsupported memory operand: {expr}")
         size = {None: 4, "b": 1, "h": 2}[m[1]]
         target = m[2]
@@ -102,7 +102,11 @@ class Machine:
         if cast:
             return self.reg[cast[1]] & 255
         if "[" in expr:
-            return self.read(*self.memory_operand(expr))
+            address, size = self.memory_operand(expr)
+            value = self.read(address, size)
+            if expr.endswith(" (s)") and value & (1 << (size * 8 - 1)):
+                value -= 1 << (size * 8)
+            return value & 0xffffffff
 
         def evaluate(node):
             if isinstance(node, ast.Constant) and isinstance(node.value, int):
@@ -125,7 +129,7 @@ class Machine:
 
     def stub(self, target):
         r = self.reg
-        if target == 0x1BD60:  # ROM MIDI decoder: queued legal USB event fixtures
+        if target == 0x1BD60:  # Relocated native decoder: queued legal USB event fixtures
             require(r["r1"] == STATE + 2264, "Unexpected decoder stream")
             if self.events:
                 event = self.events.popleft()
@@ -221,8 +225,9 @@ class Machine:
                 target, operation, expr = assign.groups()
                 value = self.value(expr)
                 if "[" in target:
-                    require(operation == "=", "Unsupported memory modification")
                     address, width = self.memory_operand(target)
+                    require(operation in ("=", "&="), "Unsupported memory modification")
+                    if operation == "&=": value &= self.read(address, width)
                     self.write(address, value, width)
                 else:
                     if operation == "+=": value += self.reg[target]
@@ -310,7 +315,7 @@ def main():
     report = dict(status="bounded_instruction_trace_passed", cases=checks, instruction_steps=steps,
                   captured_B_original_usb_bytes=list(map(len,old)), captured_B_patched_usb_bytes=list(map(len,new)),
                   gap_ticks=3, device_io=False, native_execution=False,
-                  limitations="ROM decoder, memcpy, buffer lookup, status and delay are stubs; no interrupt/USB/CPU emulation")
+                  limitations="Relocated decoder, memcpy, buffer lookup, status and delay are stubs; no interrupt/USB/CPU emulation")
     blob, hooks, _ = read_build(HERE / "artifacts/sysex-pacing")
     report.update(blob_sha256=sha(blob), hooks={name:data.hex() for name,data in hooks.items()})
     (HERE / "artifacts/sysex-pacing/instruction-tests.json").write_text(json.dumps(report,indent=2)+"\n")
